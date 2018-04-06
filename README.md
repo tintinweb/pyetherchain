@@ -37,7 +37,9 @@ or
 
 Interactive mode:
 
-```#> python -m pyetherchain
+```
+#> python -m pyetherchain
+
 ==================================================================
 
       pyetherchain - cli

@@ -89,25 +89,34 @@ Commandline scripting mode (dangerous because cmdline params will be eval'd):
 
 ```python
 e = EtherChain()
+
+# getting an accoutn object
 ac = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+
+# show the account object (json), retrieve the source if available, show transactions
 print ac
 print ac.source
-print ac.history()
 print ac.swarm_hash
 print ac.transactions()
+print ac.history()
 
+# access the charts api
 print e.charts.market_cap()
 
+# retrieve hardfork information
 print e.hardforks()
+
+# list pending transaactions (takes arguments)
 print e.transactions_pending()
 
+# describe the constructor invokation and other transaction in a human readable way 
 contract = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
 print "constructor: %s" % contract.abi.describe_constructor(contract.constructor_args)
 for tx in contract.transactions(direction="in", length=10000)["data"]:
     tx_obj = e.transaction(tx["parenthash"])[0]
     print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))
 
-# api directly
+# directly work with the backend api interface
 e = EtherChainApi()
 print e.get_transaction("c98061e6e1c9a293f57d59d53f4e171bb62afe3e5b6264e9a770406a81fb1f07")
 print e.get_transactions_pending()

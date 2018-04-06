@@ -3,9 +3,13 @@
 # github.com/tintinweb
 #
 from pyetherchain.pyetherchain import *
+import logging
+
 
 if __name__ == "__main__":
-
+    logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
+                        loglevel=logging.INFO)
+    logger.setLevel(logging.INFO)
     ##
     ## Testing
     ##
@@ -23,7 +27,7 @@ if __name__ == "__main__":
     print e.hardforks()
     print e.transactions_pending()
 
-    contract = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+    contract = e.account("0x44919b8026f38D70437A8eB3BE47B06aB1c3E4Bf")
     print "constructor: %s" % contract.abi.describe_constructor(contract.constructor_args)
     for tx in contract.transactions(direction="in", length=10000)["data"]:
         tx_obj = e.transaction(tx["parenthash"])[0]

@@ -22,6 +22,64 @@ Experimental
 * ContractAbi
 * AbiMethod
 
+# Install
+
+`#> pip install pyetherchain`
+
+or
+
+`#> python setup.py install`
+
+# Usage
+
+Interactive mode:
+
+```#> python -m pyetherchain
+==================================================================
+
+      pyetherchain - cli
+
+==================================================================
+
+Welcome to pyetherchain - the python interface to etherchain.org.
+Here's a quick help to get you started :)
+
+Classes
+* EtherChain - interface to general discovery/exploration/browsing api on etherchain
+* EtherChainAccount - interface to account/contract addresses
+* EtherChainTransaction - interface to transactions
+* EtherChainCharts - interface to statistics and charting features
+* EtherChainApi - remote communication api
+
+
+Interface:
+* etherchain - is an instance of EtherChain() - the main entry point
+* api - is an instance of the back-end api connector
+
+* logger - is the module logger instance
+
+
+Examples:
+
+    etherchain
+    etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e")
+    etherchain.transaction("d8df011e6112e2855717a46a16975a3b467bbb69f6db0a26ad6e0803f376dae9")
+
+    etherchain.transactions(start=0, length=10)
+    etherchain.transactions_pending(start=0, length=10)
+    etherchain.blocks(start=0, length=10)
+
+    etherchain.charts   # access the charts api
+    etherchain.charts.price_usd()
+
+    exit() or ctr+c (multiple times) to quit.
+
+>>> etherchain.<TAB for autocompletion>
+```
+
+Commandline scripting mode (dangerous because cmdline params will be eval'd):
+
+```python -m pyetherchain -c "print etherchain.account(0xaddress); "```
 
 # Example
 

@@ -64,8 +64,11 @@ class UserAgent(object):
 
         for _ in xrange(self.retry):
             try:
-                return self.session.get("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
+                resp = self.session.get("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
                                          params=params, headers=new_headers)
+                if resp.status_code != 200:
+                    raise Exception("Unexpected Status Code: %s!=200" % resp.status_code)
+                return resp
             except Exception, e:
                 logger.exception(e)
             logger.warning("Retrying in %d seconds..." % self.retrydelay)
@@ -77,10 +80,14 @@ class UserAgent(object):
         new_headers.update(headers)
         for _ in xrange(self.retry):
             try:
-                return self.session.post("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
+                resp = self.session.post("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
                                         params=params, headers=new_headers)
+                if resp.status_code != 200:
+                    raise Exception("Unexpected Status Code: %s!=200" % resp.status_code)
+                return resp
             except Exception, e:
                 logger.exception(e)
+            logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
         raise e
 
@@ -91,7 +98,7 @@ class EtherChainApi(object):
     """
 
     def __init__(self):
-        self.session = UserAgent(baseurl="https://www.etherchain.org", retry=2, retrydelay=8000)
+        self.session = UserAgent(baseurl="https://www.etherchain.org", retry=5, retrydelay=8)
 
     def get_transaction(self, tx):
         return self.session.get("/api/tx/%s" % tx).json()
@@ -515,6 +522,8 @@ class AbiMethod(DictLikeInterface):
     def consume(self, s):
         self.inputs = []
         idx = 0
+        if not len(s):
+            return idx
         for d_input in self["inputs"]:
             size = AbiMethod.SIZES.get(d_input["type"])(s[idx:])
             self.inputs.append({"type":d_input["type"],
@@ -593,10 +602,6 @@ class EtherChainCharts(object):
 
 
 def interact():
-    logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
-                        loglevel=logging.INFO)
-    logger.setLevel(logging.INFO)
-
     banner = """
 ==================================================================
 
@@ -662,6 +667,9 @@ Examples:
 
 
 def main():
+    logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
+                        loglevel=logging.INFO)
+    logger.setLevel(logging.INFO)
     interact()
 
 

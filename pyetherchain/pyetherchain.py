@@ -121,7 +121,7 @@ class EtherChainApi(object):
         # cleanup HTML from response
         for item in resp['data']:
             keys = item.keys()
-            for san_k in set(keys).intersection(set(("blocknumer","type","direction"))):
+            for san_k in set(keys).intersection(set(("blocknumber","type","direction"))):
                 item[san_k] = self._extract_text_from_html(item[san_k])
             for san_k in set(keys).intersection(("parenthash", "from","to")):
                 item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
@@ -133,7 +133,7 @@ class EtherChainApi(object):
             'start': start,
             'length': length,
         }
-        return self._get_pageable_data("/account/%s/txs" % account)
+        return self._get_pageable_data("/account/%s/txs" % account, start=start, length=length)
 
     def get_transactions_pending(self, start=0, length=10):
         #/txs/pending/data?draw=2&columns[0][data]=parenthash&columns[0][name]=&columns[0][searchable]=true&columns[0][orderable]=false&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=time&columns[1][name]=&columns[1][searchable]=true&columns[1][orderable]=false&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=from&columns[2][name]=&columns[2][searchable]=true&columns[2][orderable]=false&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=to&columns[3][name]=&columns[3][searchable]=true&columns[3][orderable]=false&columns[3][search][value]=&columns[3][search][regex]=false&columns[4][data]=value&columns[4][name]=&columns[4][searchable]=true&columns[4][orderable]=false&columns[4][search][value]=&columns[4][search][regex]=false&columns[5][data]=gas&columns[5][name]=&columns[5][searchable]=true&columns[5][orderable]=false&columns[5][search][value]=&columns[5][search][regex]=false&columns[6][data]=gasprice&columns[6][name]=&columns[6][searchable]=true&columns[6][orderable]=false&columns[6][search][value]=&columns[6][search][regex]=false&start=10&length=10&search[value]=&search[regex]=false&_=1522950769145
@@ -387,28 +387,27 @@ class EtherChainAccount(DictLikeInterface):
     def history(self):
         return self.api.get_account_history(self.address)
 
-    def transactions(self, start=0, length=10, txtype=TX_TYPE_ALL):
+    def transactions(self, start=0, length=10, direction=None):
         txs = self.api.get_account_transactions(account=self.address, start=start, length=length)
-        if txtype == EtherChainAccount.TX_TYPE_OUTGOING:
-            txs = [tx for tx in txs if tx['sender'].lower() == self.address.lower()]
-        elif txtype == EtherChainAccount.TX_TYPE_INCOMING:
-            txs = [tx for tx in txs if tx['recipient'].lower() == self.address.lower()]
-        elif txtype == EtherChainAccount.TX_TYPE_CREATE:
-            # outgoing
-            txs = [tx for tx in txs if tx['sender'].lower() == self.address.lower() and tx['newContract'] != 0]
-        elif txtype == EtherChainAccount.TX_TYPE_CREATION:
-            # incoming
-            txs = [tx for tx in txs if tx['recipient'].lower() == self.address.lower() and tx['newContract'] != 0]
+        if not direction:
+            return txs
+
+        if direction.lower()=="in":
+            txs["data"] = [tx for tx in txs['data'] if "in" in tx["direction"].lower()]
+        elif direction.lower()=="out":
+            txs["data"] = [tx for tx in txs['data'] if "out" in tx["direction"].lower()]
+
         return txs
 
     def _get_extra_info(self):
         s = self.api.session.get("/account/%s" % self.address).text
 
-        self.abi = json.loads(self.api._extract_account_info_from_code_tag("abi", s))
+        self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
         self.swarm_hash = self.api._extract_account_info_from_code_tag("swarmHash", s)
         self.source = self.api._extract_account_info_from_code_tag("source", s)
         self.code = self.api._extract_account_info_from_code_tag("contractCode", s)
         self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
+
 
 
 class EtherChainTransaction(DictLikeInterface):
@@ -457,6 +456,87 @@ class EtherChain(object):
 
     def transaction(self, tx):
         return EtherChainTransaction(tx, api=self.api)
+
+
+class ContractAbi(object):
+
+    def __init__(self, abi):
+        self.abi = abi
+        self.signatures = {}
+        self._prepare_abi(abi)
+
+    def _str_to_hex(self, s):
+        return s.replace("0x","").decode("hex")
+
+    def _prepare_abi(self, abi):
+        for element_description in abi:
+            abi_e = AbiMethod(element_description)
+            if abi_e["type"] == "constructor":
+                # TODO - handle constructor
+                pass
+            else:
+                self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
+
+    def describe_input(self, s):
+        result = []
+        signatures = self.signatures.items()
+        s = self._str_to_hex(s)
+
+        while len(s):
+            found = False
+            for sighash, method in signatures:
+                if s.startswith(sighash):
+                    s = s[len(sighash):]
+                    size = method.consume(s)
+                    result.append(method)
+                    s = s[size:]
+                    found=True
+                    break
+            if not found:
+                m = AbiMethod({"type":"<unknown>","name":"","inputs":[],"outputs":[]})
+                m.consume(s)
+                result.append(m)
+                return result
+        return result
+
+
+class AbiMethod(DictLikeInterface):
+
+    SIZES = {"bytes8": 8,
+             "bytes16": 16,
+             "bytes32": 32,
+             "uint256": 256 / 8,
+             "bytes": 100,
+             "address": 40,
+             "bytes32[]": 32}
+
+    def __init__(self, abi):
+        self.data = abi
+        self.inputs = []
+
+    def __repr__(self):
+        return self.describe()
+
+    def describe(self):
+        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self["outputs"] else ""
+        inputs = ", ".join(["(%s) %s %r"%(i["type"],i["name"],i["data"]) for i in self.inputs]) if self.inputs else ""
+        return "%s %s %s returns (%s)" % (self["type"], self["name"], "(%s)"%inputs if inputs else "<unknown>", "(%s)" %outputs if outputs else "<unknown>")
+
+    def consume(self, s):
+        self.inputs = []
+        idx = 0
+        for d_input in self["inputs"]:
+            size = AbiMethod.SIZES.get(d_input["type"])
+            self.inputs.append({"type":d_input["type"],
+                                "name":d_input["name"],
+                                "data":s[idx:idx+size]})
+            idx += size
+        else:
+            self.inputs.append({"type":"<unknown>",
+                                "name":"",
+                                "data":s[idx:]})
+            idx = len(s)
+        return idx
 
 
 class EtherChainCharts(object):
@@ -555,8 +635,8 @@ Interface:
 Examples:
 
     etherchain
-    etherchain.account("44919b8026f38d70437a8eb3be47b06ab1c3e4bf")
-    etherchain.transaction("0x75aed1cdbaa986573b28b79320fa58321901a3a4ff478d74ff64478c0301d4f5")
+    etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e")
+    etherchain.transaction("d8df011e6112e2855717a46a16975a3b467bbb69f6db0a26ad6e0803f376dae9")
 
     etherchain.transactions(start=0, length=10)
     etherchain.transactions_pending(start=0, length=10)
@@ -590,14 +670,18 @@ Examples:
 
         code.interact(banner=banner, local=locals())
 
+
 def main():
     interact()
 
-if __name__ == "__main__":
 
-    # testing, one, two, ...
+if __name__ == "__main__":
     main()
     exit()
+
+    ##
+    ## Testing
+    ##
     e = EtherChainApi()
     #print e.get_transaction("c98061e6e1c9a293f57d59d53f4e171bb62afe3e5b6264e9a770406a81fb1f07")
     #print e.get_transactions_pending()
@@ -627,112 +711,8 @@ if __name__ == "__main__":
     print ab.hardforks()
     print ab.transactions_pending()
 
-
-'''
-exit()
-
-class Contract(object):
-
-    def __init__(self, address, name=None, balance=None, url=None,):
-        self.address, self.name, self.balance, self.url = address, name, balance, url
-
-    def __str__(self):
-        return "address=%s name=%s balance=%s url=%s"%(self.address, self.name, self.balance, self.url)
-
-
-A = """
-<table>
-<tr id="0xdcb13fa157eebf22ddc8c9aa1d6e394810de6fa3">
-<td>
-<a href="/account/0xdcb13fa157eebf22ddc8c9aa1d6e394810de6fa3">
-PiggyBank
-</a>
-</td>
-<td>2.5454983753768463 Ether ($761.59)</td>
-<td>Yes</td>
-</tr>
-</table>
-
-"""
-
-
-
-
-class ContractAbi(object):
-
-    def __init__(self, address):
-        self.methods = []
-        self.signatures = {}
-        self.address = address
-
-    def addAbiFunction(self, name, signature, constant=None):
-        abimethod = AbiFunction(name=name, signature=signature, constant=constant)
-        self.signatures[signature] = abimethod
-        self.methods.append(abimethod)
-
-    def consume(self, s):
-        result = []
-        signatures = self.signatures.items()
-        while len(s):
-
-            for sighash, method in signatures:
-                if s.startswith(sighash):
-                    s = s[len(sighash):]
-                    m, size = method.consume(s)
-                    result.append((method.function["name"],"==>",method.function["return"], m))
-                    s = s[size:]
-            else:
-                return result
-        return result
-
-class AbiFunction(object):
-
-    SIZES = {"bytes8": 8,
-             "bytes16":16,
-             "bytes32":32,
-             "uint256":256/8,
-             "bytes":100,
-             "address":40,
-             "bytes32[]":32}
-
-    def __init__(self, name, constant=None, signature=None):
-        self.constant, self.signature = constant, signature
-        self.nametxt = name
-        self.function = AbiFunction.parse_function(name)
-
-    def consume(self, s):
-        result = []
-        idx = 0
-        for atype, aname in self.function["args"]:
-            size = AbiFunction.SIZES.get(atype)
-            result.append((atype, aname, s[idx:idx+size]))
-            idx+=size
-        return result, idx
-
-    @staticmethod
-    def parse_function(ftxt):
-        name, rest = ftxt.split("(",1)
-        rvalue = ""
-        if " => " in rest:
-            rest, rvalue = rest.split(" => ",1)
-        args = []
-        for a in rest.replace(")","").strip().split(","):
-            if " " in a.strip():
-                aname, atype = a.strip().split(" ")
-                args.append([atype, aname])
-        rvalue = [r.strip() for r in rvalue.replace("(","").replace(")","").strip().split(",")]
-
-
-        return {"name":name.strip(), "args":args, "return":rvalue}
-
-
-if __name__=="__main__":
-    ec = EtherChainApi()
-    contract = ec.getContractAbiFromHtml("6090a6e47849629b7245dfa1ca21d94cd15878ef")
-    for tx in  ec.getAccountTransactions("6090a6e47849629b7245dfa1ca21d94cd15878ef"):
-        for trans in ec.get_transaction(tx):
-            if trans.get("to") == "6090a6e47849629b7245dfa1ca21d94cd15878ef":
-                print contract.consume(trans["input"].decode("hex"))
-    #for c in ec.iter_contracts():
-    #    print c
-'''
+    e = EtherChain()
+    contract = e.account("0x44919b8026f38D70437A8eB3BE47B06aB1c3E4Bf")
+    for tx in contract.transactions(direction="in", length=10000)["data"]:
+        tx_obj = e.transaction(tx["parenthash"])[0]
+        print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))

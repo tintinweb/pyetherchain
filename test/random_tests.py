@@ -9,13 +9,33 @@ if __name__ == "__main__":
     ##
     ## Testing
     ##
+
+    e = EtherChain()
+    ac = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+    print ac
+    print ac.source
+    print ac.history()
+    print ac.swarm_hash
+    print ac.transactions()
+
+    print e.charts.market_cap()
+
+    print e.hardforks()
+    print e.transactions_pending()
+
+    contract = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+    for tx in contract.transactions(direction="in", length=10000)["data"]:
+        tx_obj = e.transaction(tx["parenthash"])[0]
+        print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))
+
+    # api directly
     e = EtherChainApi()
-    # print e.get_transaction("c98061e6e1c9a293f57d59d53f4e171bb62afe3e5b6264e9a770406a81fb1f07")
-    # print e.get_transactions_pending()
-    # print e.get_transactions()
-    # print e.get_blocks()
-    # print e.get_accounts()
-    # print e.get_hardforks()
+    print e.get_transaction("c98061e6e1c9a293f57d59d53f4e171bb62afe3e5b6264e9a770406a81fb1f07")
+    print e.get_transactions_pending()
+    print e.get_transactions()
+    print e.get_blocks()
+    print e.get_accounts()
+    print e.get_hardforks()
     # print e.get_correlations()
     # print e.get_stats_price_btc()
     print e.get_account_transactions("0x1104e154efa21ff3ca5da097f8906cd56b1e7d86")
@@ -24,22 +44,3 @@ if __name__ == "__main__":
         print e.get_account_source(("0x1104e154efa21ff3ca5da097f8906cd56b1e7d86"))
     except Exception, e:
         pass
-
-    ac = EtherChainAccount("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
-    print ac
-    print ac.history()
-    print ac.swarm_hash
-    print ac.transactions()
-
-    es = EtherChainCharts()
-    print es.market_cap()
-
-    ab = EtherChain()
-    print ab.hardforks()
-    print ab.transactions_pending()
-
-    e = EtherChain()
-    contract = e.account("0x44919b8026f38D70437A8eB3BE47B06aB1c3E4Bf")
-    for tx in contract.transactions(direction="in", length=10000)["data"]:
-        tx_obj = e.transaction(tx["parenthash"])[0]
-        print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))

@@ -9,7 +9,7 @@ Python Interface to EtherChain.org
 Interfaces
 * EtherChainAccount - interface to account/contract addresses
 * EtherChainTransaction - interface to transactions
-* EtherChainBrowser - interface to general discovery/exploration/browsing api on etherchain
+* EtherChain - interface to general discovery/exploration/browsing api on etherchain
 * EtherChainCharts - interface to statistics and charting features
 
 Backend
@@ -23,6 +23,8 @@ Experimental
 
 
 """
+import code
+import sys
 import requests
 import re
 import time
@@ -66,6 +68,7 @@ class UserAgent(object):
                                          params=params, headers=new_headers)
             except Exception, e:
                 logger.exception(e)
+            logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
         raise e
 
@@ -344,7 +347,22 @@ class EtherChainApi(object):
         return contract
 
 
-class EtherChainAccount(object):
+class DictLikeInterface(object):
+
+    def __getitem__(self, i):
+        return self.data[i]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __str__(self):
+        return str(self.data)
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class EtherChainAccount(DictLikeInterface):
     """
     Interface class of an EtherChain account/contract
     """
@@ -360,9 +378,10 @@ class EtherChainAccount(object):
         self.abi, self.swarm_hash, self.source, self.code, self.constructor_args = None, None, None, None, None
 
         self.api = api or EtherChainApi()
+        self.data = self._get()
         self._get_extra_info()
 
-    def get(self):
+    def _get(self):
         return self.api.get_account(self.address)
 
     def history(self):
@@ -392,7 +411,7 @@ class EtherChainAccount(object):
         self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
 
 
-class EtherChainTransaction(object):
+class EtherChainTransaction(DictLikeInterface):
     """
     Interface class of an EtherChain Transactions
     """
@@ -402,17 +421,21 @@ class EtherChainTransaction(object):
 
         self.api = api or EtherChainApi()
 
-    def get(self):
+        self.data = self._get()
+
+    def _get(self):
         return self.api.get_transaction(self.tx)
 
 
-class EtherChainBrowser(object):
+class EtherChain(object):
     """
     Interface to EtherChain Browsing featuers
     """
 
     def __init__(self, api=None):
         self.api = api or EtherChainApi()
+
+        self.charts = EtherChainCharts(api=self.api)
 
     def transactions_pending(self, start=0, length=10):
         return self.api.get_transactions_pending(start=start, length=length)
@@ -428,6 +451,12 @@ class EtherChainBrowser(object):
 
     def hardforks(self):
         return self.api.get_hardforks()
+
+    def account(self, address):
+        return EtherChainAccount(address, api=self.api)
+
+    def transaction(self, tx):
+        return EtherChainTransaction(tx, api=self.api)
 
 
 class EtherChainCharts(object):
@@ -493,8 +522,82 @@ class EtherChainCharts(object):
         return self.api.get_stats_total_accounts()
 
 
+def interact():
+    logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
+                        loglevel=logging.INFO)
+    logger.setLevel(logging.INFO)
+
+    banner = """
+==================================================================
+
+      pyetherchain - cli
+
+==================================================================
+
+Welcome to pyetherchain - the python interface to etherchain.org.
+Here's a quick help to get you started :)
+
+Classes
+* EtherChain - interface to general discovery/exploration/browsing api on etherchain
+* EtherChainAccount - interface to account/contract addresses
+* EtherChainTransaction - interface to transactions
+* EtherChainCharts - interface to statistics and charting features
+* EtherChainApi - remote communication api
+
+
+Interface:
+* etherchain - is an instance of EtherChain() - the main entry point
+* api - is an instance of the back-end api connector
+
+* logger - is the module logger instance
+
+
+Examples:
+
+    etherchain
+    etherchain.account("44919b8026f38d70437a8eb3be47b06ab1c3e4bf")
+    etherchain.transaction("0x75aed1cdbaa986573b28b79320fa58321901a3a4ff478d74ff64478c0301d4f5")
+
+    etherchain.transactions(start=0, length=10)
+    etherchain.transactions_pending(start=0, length=10)
+    etherchain.blocks(start=0, length=10)
+
+    etherchain.charts   # access the charts api
+    etherchain.charts.price_usd()
+
+    exit() or ctr+c (multiple times) to quit.
+
+"""
+
+    # setup Environment
+    #  spawn default connection, share api connection
+
+
+    api = EtherChainApi()
+    etherchain = EtherChain(api=api)
+
+    if len(sys.argv)>2 and sys.argv[1] == "-c":
+        print eval(" ".join(sys.argv[2:]), locals())
+    else:
+        try:
+            import readline
+        except ImportError:
+            logger.warning("Module readline not available.")
+        else:
+            import rlcompleter
+            readline.parse_and_bind("tab: complete")
+            readline.set_completer(rlcompleter.Completer(locals()).complete)
+
+        code.interact(banner=banner, local=locals())
+
+def main():
+    interact()
+
 if __name__ == "__main__":
+
     # testing, one, two, ...
+    main()
+    exit()
     e = EtherChainApi()
     #print e.get_transaction("c98061e6e1c9a293f57d59d53f4e171bb62afe3e5b6264e9a770406a81fb1f07")
     #print e.get_transactions_pending()
@@ -520,7 +623,7 @@ if __name__ == "__main__":
     es = EtherChainCharts()
     print es.market_cap()
 
-    ab = EtherChainBrowser()
+    ab = EtherChain()
     print ab.hardforks()
     print ab.transactions_pending()
 

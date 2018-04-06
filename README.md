@@ -47,7 +47,7 @@ Interactive mode:
 Welcome to pyetherchain - the python interface to etherchain.org.
 Here's a quick help to get you started :)
 
-Classes
+Available Classes
 * EtherChain - interface to general discovery/exploration/browsing api on etherchain
 * EtherChainAccount - interface to account/contract addresses
 * EtherChainTransaction - interface to transactions
@@ -55,7 +55,7 @@ Classes
 * EtherChainApi - remote communication api
 
 
-Interface:
+Available instances:
 * etherchain - is an instance of EtherChain() - the main entry point
 * api - is an instance of the back-end api connector
 
@@ -66,6 +66,7 @@ Examples:
 
     etherchain
     etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e")
+    etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e").transactions()
     etherchain.transaction("d8df011e6112e2855717a46a16975a3b467bbb69f6db0a26ad6e0803f376dae9")
 
     etherchain.transactions(start=0, length=10)

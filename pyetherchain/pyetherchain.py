@@ -383,11 +383,26 @@ class EtherChainAccount(DictLikeInterface):
     def _get_extra_info(self):
         s = self.api.session.get("/account/%s" % self.address).text
 
-        self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
-        self.swarm_hash = self.api._extract_account_info_from_code_tag("swarmHash", s)
-        self.source = self.api._extract_account_info_from_code_tag("source", s)
-        self.code = self.api._extract_account_info_from_code_tag("contractCode", s)
-        self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
+        try:
+            self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
+        except ValueError:
+            logger.debug("could not retrieve contract abi; maybe its just not a contract")
+        try:
+            self.swarm_hash = self.api._extract_account_info_from_code_tag("swarmHash", s)
+        except ValueError:
+            logger.debug("could not retrieve swarm hash")
+        try:
+            self.source = self.api._extract_account_info_from_code_tag("source", s)
+        except ValueError:
+            logger.debug("could not retrieve contract source code")
+        try:
+            self.code = self.api._extract_account_info_from_code_tag("contractCode", s)
+        except ValueError:
+            logger.debug("could not retrieve contract bytecode")
+        try:
+            self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
+        except ValueError:
+            logger.debug("could not retrieve contract constructor args")
 
 
 
@@ -612,7 +627,7 @@ def interact():
 Welcome to pyetherchain - the python interface to etherchain.org.
 Here's a quick help to get you started :)
 
-Classes
+Available Classes
 * EtherChain - interface to general discovery/exploration/browsing api on etherchain
 * EtherChainAccount - interface to account/contract addresses
 * EtherChainTransaction - interface to transactions
@@ -620,7 +635,7 @@ Classes
 * EtherChainApi - remote communication api
 
 
-Interface:
+Available instances:
 * etherchain - is an instance of EtherChain() - the main entry point
 * api - is an instance of the back-end api connector
 
@@ -631,6 +646,7 @@ Examples:
 
     etherchain
     etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e")
+    etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e").transactions()
     etherchain.transaction("d8df011e6112e2855717a46a16975a3b467bbb69f6db0a26ad6e0803f376dae9")
 
     etherchain.transactions(start=0, length=10)

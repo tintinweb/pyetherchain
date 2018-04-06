@@ -312,39 +312,6 @@ class EtherChainApi(object):
 
             nr += 50
 
-    def getAccountTransactions(self, address, start=0, length=500, _filter=None):
-        """
-        @deprecated
-
-        :param address:
-        :param start:
-        :param length:
-        :param _filter:
-        :return:
-        """
-        # https://www.etherchain.org/account/44919b8026f38d70437a8eb3be47b06ab1c3e4bf/txs?draw=2&start=0&length=9999999&_=1522784788314
-        resp = self.session.get("%s/account/%s/txs?start=%d&length=%d"%(self.BASEURL, address, start, length))
-        for item in resp.json().get("data",[]):
-            yield ''.join(re.findall("\'/tx/([^\']+)\'", item["parenthash"]))
-
-    # @deprecated
-    def getContractAbiFromHtml(self, address):
-        """
-        @deprecated
-
-        :param address:
-        :return:
-        """
-        resp = self.session.get("%s/account/%s" % (self.BASEURL, address))
-        rslt = []
-        for _ in re.findall(r"<tr><td>function</td><td>([^<]+)</td><td>([^<]+)</td><td>([^<]+)</td></tr>", resp.text):
-            rslt.append(dict(zip(["name","constant","signature"], _)))
-
-        contract = ContractAbi(address)
-        for _ in rslt:
-            contract.addAbiFunction(name=_["name"], signature=_["signature"].replace("0x","").decode("hex"), constant=_["constant"])
-
-        return contract
 
 
 class DictLikeInterface(object):
@@ -360,6 +327,13 @@ class DictLikeInterface(object):
 
     def __repr__(self):
         return self.__str__()
+
+    def get(self, k, default=None):
+        try:
+            return self[k]
+        except KeyError:
+            return default
+
 
 
 class EtherChainAccount(DictLikeInterface):
@@ -473,9 +447,18 @@ class ContractAbi(object):
             abi_e = AbiMethod(element_description)
             if abi_e["type"] == "constructor":
                 # TODO - handle constructor
-                pass
+                self.signatures[None] = abi_e
             else:
                 self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
+
+    def describe_constructor(self, s):
+        result = []
+
+        method = self.signatures[None]
+        method.consume(s)
+        result.append(method)
+
+        return result
 
     def describe_input(self, s):
         result = []
@@ -485,6 +468,8 @@ class ContractAbi(object):
         while len(s):
             found = False
             for sighash, method in signatures:
+                if sighash is None:
+                    continue # skip constructor
                 if s.startswith(sighash):
                     s = s[len(sighash):]
                     size = method.consume(s)
@@ -502,13 +487,18 @@ class ContractAbi(object):
 
 class AbiMethod(DictLikeInterface):
 
-    SIZES = {"bytes8": 8,
-             "bytes16": 16,
-             "bytes32": 32,
-             "uint256": 256 / 8,
-             "bytes": 100,
-             "address": 40,
-             "bytes32[]": 32}
+    SIZES = {"bytes8": lambda s:8,
+             "bytes16": lambda s: 16,
+             "bytes32": lambda s:32,
+             "uint256": lambda s:256 / 8,
+             "int256": lambda s:256 / 8,
+             "uint": lambda s:256 / 8,
+             "uint8": lambda s:8/8,
+             "int": lambda s:256 / 8,
+             "bytes": lambda s:100,
+             "address": lambda s:160/8,
+             "bytes32[]": lambda s: 32,
+             "string": lambda s: s.find("\0") if s.find("\0")<32 else 32}
 
     def __init__(self, abi):
         self.data = abi
@@ -518,15 +508,15 @@ class AbiMethod(DictLikeInterface):
         return self.describe()
 
     def describe(self):
-        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self["outputs"] else ""
+        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self.get("outputs") else ""
         inputs = ", ".join(["(%s) %s %r"%(i["type"],i["name"],i["data"]) for i in self.inputs]) if self.inputs else ""
-        return "%s %s %s returns (%s)" % (self["type"], self["name"], "(%s)"%inputs if inputs else "<unknown>", "(%s)" %outputs if outputs else "<unknown>")
+        return "%s %s %s returns (%s)" % (self["type"], self.get("name"), "(%s)"%inputs if inputs else "<unknown>", "(%s)" %outputs if outputs else "<unknown>")
 
     def consume(self, s):
         self.inputs = []
         idx = 0
         for d_input in self["inputs"]:
-            size = AbiMethod.SIZES.get(d_input["type"])
+            size = AbiMethod.SIZES.get(d_input["type"])(s[idx:])
             self.inputs.append({"type":d_input["type"],
                                 "name":d_input["name"],
                                 "data":s[idx:idx+size]})

@@ -24,6 +24,7 @@ if __name__ == "__main__":
     print e.transactions_pending()
 
     contract = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+    print "constructor: %s" % contract.abi.describe_constructor(contract.constructor_args)
     for tx in contract.transactions(direction="in", length=10000)["data"]:
         tx_obj = e.transaction(tx["parenthash"])[0]
         print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))

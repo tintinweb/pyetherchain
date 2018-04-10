@@ -114,10 +114,11 @@ class EtherChainApi(object):
         return self.session.get("/account/%s/history" % account).json()
 
     def _extract_text_from_html(self, s):
-        return ''.join(re.findall(r">(.+?)</", s))
+        return re.sub('<[^<]+?>', '', s).strip()
+        #return ''.join(re.findall(r">(.+?)</", s)) if ">" in s and "</" in s else s
 
     def _extract_hexstr_from_html_attrib(self, s):
-        return ''.join(re.findall(r".+/([^']+)'", s))
+        return ''.join(re.findall(r".+/([^']+)'", s)) if ">" in s and "</" in s else s
 
     def _get_pageable_data(self, path, start=0, length=10):
         params = {
@@ -128,9 +129,9 @@ class EtherChainApi(object):
         # cleanup HTML from response
         for item in resp['data']:
             keys = item.keys()
-            for san_k in set(keys).intersection(set(("blocknumber","type","direction"))):
+            for san_k in set(keys).intersection(set(("account", "blocknumber", "type", "direction"))):
                 item[san_k] = self._extract_text_from_html(item[san_k])
-            for san_k in set(keys).intersection(("parenthash", "from","to")):
+            for san_k in set(keys).intersection(("parenthash", "from", "to", "address")):
                 item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
         return resp
 
@@ -152,8 +153,18 @@ class EtherChainApi(object):
     def get_blocks(self, start=0, length=10):
         return self._get_pageable_data("/blocks/data", start=start, length=length)
 
-    def get_accounts(self, start=0, length=10):
-        return self._get_pageable_data("/accounts/data", start=start, length=length)
+    def get_accounts(self, start=0, length=10, _type=None):
+        if not _type:
+            return self._get_pageable_data("/accounts/data", start=start, length=length)
+        ret = []
+        while True:
+            resp = self._get_pageable_data("/accounts/data", start=start, length=length)
+            for acc in resp["data"]:
+                if acc["type"].lower() == _type:
+                    ret.append(EtherChainAccount(acc["address"]))
+                    if len(ret) >= 10:
+                        return ret
+
 
     def _parse_tbodies(self, data):
         tbodies = []
@@ -320,7 +331,6 @@ class EtherChainApi(object):
             nr += 50
 
 
-
 class DictLikeInterface(object):
 
     def __getitem__(self, i):
@@ -341,6 +351,21 @@ class DictLikeInterface(object):
         except KeyError:
             return default
 
+
+class EtherChainTransaction(DictLikeInterface):
+    """
+    Interface class of an EtherChain Transactions
+    """
+
+    def __init__(self, tx, api=None):
+        self.tx = tx
+
+        self.api = api or EtherChainApi()
+
+        self.data = self._get()
+
+    def _get(self):
+        return self.api.get_transaction(self.tx)
 
 
 class EtherChainAccount(DictLikeInterface):
@@ -404,22 +429,42 @@ class EtherChainAccount(DictLikeInterface):
         except ValueError:
             logger.debug("could not retrieve contract constructor args")
 
+    def describe_constructor(self):
+        return self.abi.describe_constructor(self.constructor_args)
 
+    def describe_transactions(self, length=10000):
+        reslt = []
+        for tx in self.transactions(direction="in", length=length)["data"]:
+            tx_obj = EtherChainTransaction(tx["parenthash"], api=self.api)[0]
+            reslt.append((tx_obj["hash"], self.abi.describe_input(tx_obj["input"])))
+        return reslt
 
-class EtherChainTransaction(DictLikeInterface):
-    """
-    Interface class of an EtherChain Transactions
-    """
-
-    def __init__(self, tx, api=None):
-        self.tx = tx
-
-        self.api = api or EtherChainApi()
-
-        self.data = self._get()
-
-    def _get(self):
-        return self.api.get_transaction(self.tx)
+    def describe_contract(self, nr_of_transactions_to_include=0):
+        header = """//***********************************************************
+//
+// created with pyetherchain.EtherChainAccount(address).describe_contract()
+// see: https://github.com/tintinweb/pyetherchain
+//
+// Name:     %s
+// Address:  %s
+// Swarm:    %s
+//
+//
+// Constructor Args: %s
+//
+//
+// Transactions %s: %s
+//
+//***************************
+""" % (self["name"],
+       self["address"],
+       self.swarm_hash,
+       self.describe_constructor(),
+       "(last %d)" % nr_of_transactions_to_include if nr_of_transactions_to_include else "",
+       "\n//     " + "\n//     ".join(("[IN] %s : %s" % (txhash, txdata) for txhash, txdata in
+                                               self.describe_transactions(
+                                                   nr_of_transactions_to_include))) if nr_of_transactions_to_include else "<disabled>")
+        return "%s%s" % (header.encode("utf-8"), self.source.encode("utf-8"))
 
 
 class EtherChain(object):
@@ -443,6 +488,12 @@ class EtherChain(object):
 
     def accounts(self, start=0, length=10):
         return self.api.get_accounts(start=start, length=length)
+
+    def contracts(self, start=0, length=10):
+        return self.api.get_accounts(start=start, length=length, _type="contract")
+
+    def contracts(self, start=0, length=10):
+        return self.api.get_accounts(start=start, length=length, _type="contract")
 
     def hardforks(self):
         return self.api.get_hardforks()
@@ -469,14 +520,23 @@ class ContractAbi(object):
             abi_e = AbiMethod(element_description)
             if abi_e["type"] == "constructor":
                 # TODO - handle constructor
-                self.signatures[None] = abi_e
+                self.signatures["__constructor__"] = abi_e
+            elif abi_e["type"] == "fallback":
+                self.signatures["__fallback__"] = abi_e
             else:
                 self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
 
     def describe_constructor(self, s):
         result = []
 
-        method = self.signatures[None]
+        method = self.signatures.get("__constructor__")
+        if not method:
+            # constructor not available
+            m = AbiMethod({"type": "constructor", "name": "", "inputs": [], "outputs": []})
+            m.consume(s)
+            result.append(m)
+            return result
+
         method.consume(s)
         result.append(method)
 
@@ -520,7 +580,8 @@ class AbiMethod(DictLikeInterface):
              "bytes": lambda s:100,
              "address": lambda s:160/8,
              "bytes32[]": lambda s: 32,
-             "string": lambda s: s.find("\0") if s.find("\0")<32 else 32}
+             "string": lambda s: s.find("\0") if s.find("\0")<32 else 32,
+             "address[]": lambda s: 160/8}
 
     def __init__(self, abi):
         self.data = abi
@@ -540,6 +601,8 @@ class AbiMethod(DictLikeInterface):
         if not len(s):
             return idx
         for d_input in self["inputs"]:
+            if AbiMethod.SIZES.get(d_input["type"])==None:
+                print d_input["type"]
             size = AbiMethod.SIZES.get(d_input["type"])(s[idx:])
             self.inputs.append({"type":d_input["type"],
                                 "name":d_input["name"],

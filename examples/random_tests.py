@@ -5,6 +5,7 @@
 from pyetherchain.pyetherchain import *
 import logging
 
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
@@ -27,7 +28,7 @@ if __name__ == "__main__":
     print e.hardforks()
     print e.transactions_pending()
 
-    contract = e.account("0x6090A6e47849629b7245Dfa1Ca21D94cd15878Ef")
+    contract = e.account("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
     print "constructor: %s" % contract.abi.describe_constructor(contract.constructor_args)
     for tx in contract.transactions(direction="in", length=10000)["data"]:
         tx_obj = e.transaction(tx["parenthash"])[0]

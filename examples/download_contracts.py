@@ -33,30 +33,6 @@ def download_contract_sources(output_directory, start=0, amount=100, batch=100, 
         if nr_of_transactions_to_include:
             logger.debug("retrieving transactions")
         with open(fpath,"wb") as f:
-            '''
-            header = """//***********************************************************
-//
-// dumped with pyetherchain.download_contracts()
-// see: https://github.com/tintinweb/pyetherchain
-//
-// Name:     %s
-// Address:  %s
-// Swarm:    %s
-//
-//
-// Constructor Args: %s
-//
-//
-// Transactions %s: %s
-//
-//***************************
-""" % (c["name"], c["address"], c.swarm_hash,
-                   c.describe_constructor(),
-                   "(last %d)"%nr_of_transactions_to_include if nr_of_transactions_to_include else "",
-                   "\n//     "+"\n//     ".join(("[IN] %s : %s"%(txhash,txdata) for txhash,txdata in c.describe_transactions(nr_of_transactions_to_include))) if nr_of_transactions_to_include else "<disabled>")
-            f.write(header)
-            f.write(c.source.encode("utf-8"))
-            '''
             f.write(c.describe_contract(nr_of_transactions_to_include=nr_of_transactions_to_include))
 
         print "[%d/%d] dumped --> %s (%-20s) -> %s" % (nr, amount, c["address"], c["name"], fpath)
@@ -71,8 +47,8 @@ def main():
                         loglevel=logging.INFO)
     logger.setLevel(logging.INFO)
     download_contract_sources(sys.argv[1] if len(sys.argv)>1 else "output",
-                              start=0, amount=10,
-                              overwrite=True,
+                              start=0, amount=1000,
+                              overwrite=False,
                               nr_of_transactions_to_include=5)
 
 if __name__ == "__main__":

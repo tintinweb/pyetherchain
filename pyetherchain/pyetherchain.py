@@ -445,6 +445,8 @@ class EtherChainAccount(DictLikeInterface):
 // created with pyetherchain.EtherChainAccount(address).describe_contract()
 // see: https://github.com/tintinweb/pyetherchain
 //
+// Date:     %s
+//
 // Name:     %s
 // Address:  %s
 // Swarm:    %s
@@ -456,7 +458,8 @@ class EtherChainAccount(DictLikeInterface):
 // Transactions %s: %s
 //
 //***************************
-""" % (self["name"],
+""" % (time.ctime(),
+       self["name"],
        self["address"],
        self.swarm_hash,
        self.describe_constructor(),

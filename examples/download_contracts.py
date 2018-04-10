@@ -13,12 +13,12 @@ def iter_contracts(start=0, length=100):
     s = EtherChain()
     while True:
         contracts = s.contracts(start=start, length=length)
-        for contract in contracts:
+        for contract in contracts["data"]:
             yield contract
-        start += len(contract)
+        start += contracts["processed"]
 
 
-def download_contract_sources(output_directory, start=0, amount=100, batch=100, nr_of_transactions_to_include=5, overwrite=True):
+def download_contract_sources(output_directory, start=0, amount=100, batch=50, nr_of_transactions_to_include=5, overwrite=True):
     nr = 0
     for c in (_ for _ in iter_contracts(start=start, length=batch) if _.source and _.source.strip()):
         # only contracts with source

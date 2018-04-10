@@ -156,14 +156,17 @@ class EtherChainApi(object):
     def get_accounts(self, start=0, length=10, _type=None):
         if not _type:
             return self._get_pageable_data("/accounts/data", start=start, length=length)
-        ret = []
+        ret = {"data":[]}
         while True:
             resp = self._get_pageable_data("/accounts/data", start=start, length=length)
             for acc in resp["data"]:
                 if acc["type"].lower() == _type:
-                    ret.append(EtherChainAccount(acc["address"]))
-                    if len(ret) >= 10:
+                    ret["data"].append(EtherChainAccount(acc["address"]))
+                    if len(ret["data"]) >= length:
+                        ret["processed"] = start+1
                         return ret
+                start += 1
+            # BUG - we somehow need to also return the amount of skipped entries
 
 
     def _parse_tbodies(self, data):
@@ -491,9 +494,6 @@ class EtherChain(object):
 
     def accounts(self, start=0, length=10):
         return self.api.get_accounts(start=start, length=length)
-
-    def contracts(self, start=0, length=10):
-        return self.api.get_accounts(start=start, length=length, _type="contract")
 
     def contracts(self, start=0, length=10):
         return self.api.get_accounts(start=start, length=length, _type="contract")

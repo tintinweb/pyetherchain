@@ -14,7 +14,6 @@ A python interface to the ethereum blockchain explorer at www.etherchain.org ❤
 ![interactive mode](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
 
 **CLI**  
->>>>>>> fb85080cf8e0e9156a66c1450fb1eb14ac11dc07
 ![interactive mode](https://user-images.githubusercontent.com/2865694/38444933-9a10b468-39f1-11e8-9a4a-3e7d9dc2c377.png)
 
 **FUN**   

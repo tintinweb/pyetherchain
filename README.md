@@ -2,15 +2,23 @@
 A python interface to the ethereum blockchain explorer at www.etherchain.org ❤⛓🐍
 
 * Access accounts, contracts, transaction, source-code, charts, correlations on www.etherchain.org
-* describe transaction inputs based on the abi in a human readable form
+* abi-decode the constructor and transaction inputs to a human readable form
+* dump smart-contract source-code with extra information
 * provides a scriptable commandline interface `python -m pyetherchain -c "etherchain.account('address'); any other python code"` (warning security)
 * provides an interactive mode with autocompletion to play with etherchain.org in your shell `python -m pyetherchain` (default)
 * can easily be used as a library in your projects
 
 🐍 Python 3.x
 
+**Dumped Contracts with abi decoded constructor/transactions**  
+![interactive mode](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
+
+**CLI**  
+>>>>>>> fb85080cf8e0e9156a66c1450fb1eb14ac11dc07
 ![interactive mode](https://user-images.githubusercontent.com/2865694/38444933-9a10b468-39f1-11e8-9a4a-3e7d9dc2c377.png)
 
+**FUN**   
+see [advertising campaign via transactions to popular contracts](https://github.com/tintinweb/pyetherchain/blob/master/doc/fun.md)
 
 ### Interfaces
 
@@ -89,7 +97,7 @@ Commandline scripting mode (dangerous because cmdline params will be eval'd):
 
 ```python -m pyetherchain -c "print etherchain.account(0xaddress); "```
 
-# Example
+# Random Examples
 
 ```python
 e = EtherChain()
@@ -119,6 +127,9 @@ print "constructor: %s" % contract.abi.describe_constructor(contract.constructor
 for tx in contract.transactions(direction="in", length=10000)["data"]:
     tx_obj = e.transaction(tx["parenthash"])[0]
     print "transaction: [IN] <== %s : %s" % (tx_obj["hash"], contract.abi.describe_input(tx_obj["input"]))
+    
+# or just shorthand dump contract with extra info
+contract.describe_contract()
 
 # directly work with the backend api interface
 e = EtherChainApi()

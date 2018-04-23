@@ -3,16 +3,17 @@
 
 So I was dumping ethereum smart contracts from an online ethereum explorer. 
 
-The [script/library](https://github.com/tintinweb/pyetherchain/blob/master/examples/download_contracts.py) I use dumps the source code and tries to resolve the constructor's invocation as well as the last x transactions to the contract found ont he blockchain in a human readable way.
+The [script/library](https://github.com/tintinweb/pyetherchain/blob/master/examples/download_contracts.py) I use dumps the source code and tries to resolve the constructor's invocation as well as the last x transactions to the contract found ont he blockchain in a human readable way. This is just to make things more easily understandable :)
 
-I left the script unattended for quite some time and checked the results just to see that someone is obviously running an advertising campaign on the mainnet by calling contracts with a special message :) (see the screenshot below).
+I left the script unattended for quite some time and checked the results just to see some weird transactions. Someone is obviously spending some Ξ to create transactions on the mainnet to run an advertising campaign :)  
 
-Why not?! 😄 
 
 
 ![DigiXCrowdSale](https://user-images.githubusercontent.com/2865694/38580229-a9ae16c0-3d09-11e8-9b4e-b15648bce627.png)
 
 ![bf4ed](https://user-images.githubusercontent.com/2865694/38580453-4d83aa44-3d0a-11e8-8186-9107132a9eba.png)
+
+![x3](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
 
 ![NoName](https://user-images.githubusercontent.com/2865694/38579669-ff42fefe-3d07-11e8-851c-d86cecea4913.png)
 

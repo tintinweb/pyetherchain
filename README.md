@@ -7,6 +7,8 @@ A python interface to the ethereum blockchain explorer at www.etherchain.org ❤
 * provides an interactive mode with autocompletion to play with etherchain.org in your shell `python -m pyetherchain` (default)
 * can easily be used as a library in your projects
 
+🐍 Python 3.x
+
 ![interactive mode](https://user-images.githubusercontent.com/2865694/38444933-9a10b468-39f1-11e8-9a4a-3e7d9dc2c377.png)
 
 

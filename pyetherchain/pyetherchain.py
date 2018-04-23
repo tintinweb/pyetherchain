@@ -37,6 +37,9 @@ try:
 except ImportError:
     # Python 3
     from html.parser import HTMLParser
+from eth_abi import (
+    decode_abi
+)
 
 import logging
 
@@ -62,14 +65,14 @@ class UserAgent(object):
         new_headers = self.session.headers.copy()
         new_headers.update(headers)
 
-        for _ in xrange(self.retry):
+        for _ in range(self.retry):
             try:
                 resp = self.session.get("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
                                          params=params, headers=new_headers)
                 if resp.status_code != 200:
                     raise Exception("Unexpected Status Code: %s!=200" % resp.status_code)
                 return resp
-            except Exception, e:
+            except Exception as e:
                 logger.exception(e)
             logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
@@ -78,14 +81,14 @@ class UserAgent(object):
     def post(self, path, params={}, headers={}):
         new_headers = self.session.headers.copy()
         new_headers.update(headers)
-        for _ in xrange(self.retry):
+        for _ in range(self.retry):
             try:
                 resp = self.session.post("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
                                         params=params, headers=new_headers)
                 if resp.status_code != 200:
                     raise Exception("Unexpected Status Code: %s!=200" % resp.status_code)
                 return resp
-            except Exception, e:
+            except Exception as e:
                 logger.exception(e)
             logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
@@ -412,7 +415,7 @@ class EtherChainAccount(DictLikeInterface):
         s = self.api.session.get("/account/%s" % self.address).text
 
         try:
-            self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
+            self.abi = ContractAbiEthAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
         except ValueError:
             logger.debug("could not retrieve contract abi; maybe its just not a contract")
         try:
@@ -431,6 +434,9 @@ class EtherChainAccount(DictLikeInterface):
             self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
         except ValueError:
             logger.debug("could not retrieve contract constructor args")
+
+    def set_abi(self, json_abi):
+        self.abi = ContractAbi(json_abi)
 
     def describe_constructor(self):
         return self.abi.describe_constructor(self.constructor_args)
@@ -455,7 +461,7 @@ class EtherChainAccount(DictLikeInterface):
 // Swarm:    %s
 //
 //
-// Constructor Args: %s
+// Constructor Args: %r
 //
 //
 // Transactions %s: %s
@@ -467,10 +473,11 @@ class EtherChainAccount(DictLikeInterface):
        self.swarm_hash,
        self.describe_constructor(),
        "(last %d)" % nr_of_transactions_to_include if nr_of_transactions_to_include else "",
-       "\n//     " + "\n//     ".join(("[IN] %s : %s" % (txhash, txdata) for txhash, txdata in
+       "\n//     " + "\n//     ".join(("[IN] %s : %r" % (txhash, txdata) for txhash, txdata in
                                                self.describe_transactions(
                                                    nr_of_transactions_to_include))) if nr_of_transactions_to_include else "<disabled>")
-        return "%s%s" % (header.encode("utf-8"), self.source.encode("utf-8"))
+
+        return "%s%s" % (header, self.source)
 
 
 class EtherChain(object):
@@ -508,6 +515,112 @@ class EtherChain(object):
         return EtherChainTransaction(tx, api=self.api)
 
 
+class ContractAbiEthAbi(object):
+
+    def __init__(self, abi):
+        self.abi = abi
+        self.signatures = {}
+        self._prepare_abi(abi)
+
+    def _str_to_hex(self, s):
+        return bytes.fromhex(s.replace("0x", ""))
+
+    def _prepare_abi(self, abi):
+        for element_description in abi:
+            abi_e = AbiMethodEthAbi(element_description)
+            if abi_e["type"] == "constructor":
+                # TODO - handle constructor
+                self.signatures[b"__constructor__"] = abi_e
+            elif abi_e["type"] == "fallback":
+                abi_e.data.setdefault("inputs",[])
+                self.signatures[b"__fallback__"] = abi_e
+            elif abi_e["type"] == "function":
+                self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
+            elif abi_e["type"] == "event":
+                self.signatures[b"__event__"] = abi_e
+
+            else:
+                raise Exfception("Invalid abi type: %s - %s - %s"%(abi_e.get("type"), element_description, abi_e))
+
+    def describe_constructor(self, s):
+        s = self._str_to_hex(s)
+
+        method = self.signatures.get(b"__constructor__")
+        if not method:
+            # constructor not available
+            m = AbiMethodEthAbi({"type": "constructor", "name": "", "inputs": [], "outputs": []})
+            return m
+
+        types_def = method["inputs"]
+        types = [t["type"] for t in types_def]
+        names = [t["name"] for t in types_def]
+
+        if not len(s):
+            values = len(types)*["<nA>"]
+        else:
+            values = decode_abi(types, s)
+
+        # (type, name, data)
+        method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(zip(types, names, values))]
+        return method
+
+    def describe_input(self, s):
+        signatures = self.signatures.items()
+        s = self._str_to_hex(s)
+
+
+        for sighash, method in signatures:
+            if sighash is None or sighash.startswith(b"__"):
+                continue  # skip constructor
+
+
+            if s.startswith(sighash):
+                s = s[len(sighash):]
+
+                types_def = self.signatures.get(sighash)["inputs"]
+                types = [t["type"] for t in types_def]
+                names = [t["name"] for t in types_def]
+
+                if not len(s):
+                    values = len(types) * ["<nA>"]
+                else:
+                    values = decode_abi(types, s)
+
+                # (type, name, data)
+                method.inputs = [{"type":t,"name":n,"data":v} for t,n,v in list(zip(types,names,values))]
+                return method
+        else:
+            m = AbiMethodEthAbi({"type": "fallback", "name": "__fallback__", "inputs": [], "outputs": []})
+            types_def = self.signatures.get(b"__fallback__",{"inputs":[]})["inputs"]
+            types = [t["type"] for t in types_def]
+            names = [t["name"] for t in types_def]
+
+            values = decode_abi(types, s)
+
+            # (type, name, data)
+            method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(zip(types, names, values))]
+            return method
+
+
+class AbiMethodEthAbi(DictLikeInterface):
+
+    def __init__(self, abi):
+        self.data = abi
+        self.inputs = []
+
+    def __repr__(self):
+        return self.describe()
+
+#    def __str__(self):
+#        return self.__repr__()
+
+    def describe(self):
+        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self.get("outputs") else ""
+        inputs = ", ".join(["(%s) %s = %r"%(i["type"],i["name"],i["data"]) for i in self.inputs]) if self.inputs else ""
+        return "%s %s %s returns %s" % (self["type"], self.get("name"), "(%s)"%inputs if inputs else "()", "(%s)" %outputs if outputs else "()")
+
+
+
 class ContractAbi(object):
 
     def __init__(self, abi):
@@ -516,7 +629,7 @@ class ContractAbi(object):
         self._prepare_abi(abi)
 
     def _str_to_hex(self, s):
-        return s.replace("0x","").decode("hex")
+        return bytes.fromhex(s.replace("0x",""))
 
     def _prepare_abi(self, abi):
         for element_description in abi:
@@ -526,8 +639,10 @@ class ContractAbi(object):
                 self.signatures["__constructor__"] = abi_e
             elif abi_e["type"] == "fallback":
                 self.signatures["__fallback__"] = abi_e
-            else:
+            elif abi_e["type"] == "function":
                 self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
+            else:
+                raise abi_e
 
     def describe_constructor(self, s):
         result = []
@@ -605,7 +720,7 @@ class AbiMethod(DictLikeInterface):
             return idx
         for d_input in self["inputs"]:
             if AbiMethod.SIZES.get(d_input["type"])==None:
-                print d_input["type"]
+                print (d_input["type"])
             size = AbiMethod.SIZES.get(d_input["type"])(s[idx:])
             self.inputs.append({"type":d_input["type"],
                                 "name":d_input["name"],
@@ -734,7 +849,7 @@ Examples:
     etherchain = EtherChain(api=api)
 
     if len(sys.argv)>2 and sys.argv[1] == "-c":
-        print eval(" ".join(sys.argv[2:]), locals())
+        print (eval(" ".join(sys.argv[2:]), locals()))
     else:
         try:
             import readline
@@ -750,8 +865,8 @@ Examples:
 
 def main():
     logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
-                        loglevel=logging.INFO)
-    logger.setLevel(logging.INFO)
+                        level=logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
     interact()
 
 

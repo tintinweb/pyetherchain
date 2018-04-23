@@ -21,7 +21,7 @@ setup(
     download_url="https://github.com/tintinweb/pyetherchain/tarball/v0.2",
     #python setup.py register -r https://testpypi.python.org/pypi
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
-    install_requires=[],
+    install_requires=["eth-abi"],
     package_data={
                   'pyetherchain': ['pyetherchain'],
                   },

@@ -9,7 +9,7 @@ def read(fname):
 
 setup(
     name="pyetherchain",
-    version="0.2",
+    version="0.3.1",
     packages=["pyetherchain"],
     author="tintinweb",
     author_email="tintinweb@oststrom.com",
@@ -18,7 +18,7 @@ setup(
     license="GPLv2",
     keywords=["etherchain.org", "etherchain", "ethereum", "blockchain", "explorer", "api"],
     url="https://github.com/tintinweb/pyetherchain/",
-    download_url="https://github.com/tintinweb/pyetherchain/tarball/v0.2",
+    download_url="https://github.com/tintinweb/pyetherchain/tarball/v0.3.1",
     #python setup.py register -r https://testpypi.python.org/pypi
     long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=["eth-abi"],

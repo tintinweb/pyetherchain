@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 # github.com/tintinweb
 #
-import pyetherchain
+from pyetherchain import pyetherchain
 
 if __name__ == "__main__":
     pyetherchain.main()

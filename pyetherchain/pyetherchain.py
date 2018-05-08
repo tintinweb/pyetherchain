@@ -439,13 +439,13 @@ class EtherChainAccount(DictLikeInterface):
         self.abi = ContractAbi(json_abi)
 
     def describe_constructor(self):
-        return self.abi.describe_constructor(self.constructor_args)
+        return self.abi.describe_constructor(ContractAbiEthAbi.str_to_bytes(self.constructor_args))
 
     def describe_transactions(self, length=10000):
         reslt = []
         for tx in self.transactions(direction="in", length=length)["data"]:
             tx_obj = EtherChainTransaction(tx["parenthash"], api=self.api)[0]
-            reslt.append((tx_obj["hash"], self.abi.describe_input(tx_obj["input"])))
+            reslt.append((tx_obj["hash"], self.abi.describe_input(ContractAbiEthAbi.str_to_bytes(tx_obj["input"]))))
         return reslt
 
     def describe_contract(self, nr_of_transactions_to_include=0):
@@ -461,7 +461,7 @@ class EtherChainAccount(DictLikeInterface):
 // Swarm:    %s
 //
 //
-// Constructor Args: %r
+// Constructor Args: %s
 //
 //
 // Transactions %s: %s
@@ -473,7 +473,7 @@ class EtherChainAccount(DictLikeInterface):
        self.swarm_hash,
        self.describe_constructor(),
        "(last %d)" % nr_of_transactions_to_include if nr_of_transactions_to_include else "",
-       "\n//     " + "\n//     ".join(("[IN] %s : %r" % (txhash, txdata) for txhash, txdata in
+       "\n//     " + "\n//     ".join(("[IN] %s : %s" % (txhash, txdata) for txhash, txdata in
                                                self.describe_transactions(
                                                    nr_of_transactions_to_include))) if nr_of_transactions_to_include else "<disabled>")
 
@@ -516,35 +516,53 @@ class EtherChain(object):
 
 
 class ContractAbiEthAbi(object):
-
-    def __init__(self, abi):
-        self.abi = abi
+    """
+    Utility Class to encapsulate a contracts ABI
+    """
+    def __init__(self, jsonabi):
+        self.abi = jsonabi
         self.signatures = {}
-        self._prepare_abi(abi)
+        self._prepare_abi(jsonabi)
 
-    def _str_to_hex(self, s):
+    @staticmethod
+    def str_to_bytes(s):
+        """
+        Convert 0xHexString to bytes
+        :param s: 0x hexstring
+        :return:  byte sequence
+        """
         return bytes.fromhex(s.replace("0x", ""))
 
-    def _prepare_abi(self, abi):
-        for element_description in abi:
+    def _prepare_abi(self, jsonabi):
+        """
+        Prepare the contract json abi for sighash lookups and fast access
+
+        :param jsonabi: contracts abi in json format
+        :return:
+        """
+        for element_description in jsonabi:
             abi_e = AbiMethodEthAbi(element_description)
             if abi_e["type"] == "constructor":
-                # TODO - handle constructor
                 self.signatures[b"__constructor__"] = abi_e
             elif abi_e["type"] == "fallback":
-                abi_e.data.setdefault("inputs",[])
+                abi_e.setdefault("inputs", [])
                 self.signatures[b"__fallback__"] = abi_e
             elif abi_e["type"] == "function":
-                self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
+                self.signatures[ContractAbiEthAbi.str_to_bytes(abi_e["signature"])] = abi_e
             elif abi_e["type"] == "event":
                 self.signatures[b"__event__"] = abi_e
-
             else:
-                raise Exfception("Invalid abi type: %s - %s - %s"%(abi_e.get("type"), element_description, abi_e))
+                raise Exception("Invalid abi type: %s - %s - %s" % (abi_e.get("type"),
+                                                                    element_description, abi_e))
 
     def describe_constructor(self, s):
-        s = self._str_to_hex(s)
+        """
+        Describe the input bytesequence (constructor arguments) s based on the loaded contract
+         abi definition
 
+        :param s: bytes constructor arguments
+        :return: AbiMethod instance
+        """
         method = self.signatures.get(b"__constructor__")
         if not method:
             # constructor not available
@@ -556,23 +574,27 @@ class ContractAbiEthAbi(object):
         names = [t["name"] for t in types_def]
 
         if not len(s):
-            values = len(types)*["<nA>"]
+            values = len(types) * ["<nA>"]
         else:
             values = decode_abi(types, s)
 
         # (type, name, data)
-        method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(zip(types, names, values))]
+        method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
+            zip(types, names, values))]
         return method
 
     def describe_input(self, s):
-        signatures = self.signatures.items()
-        s = self._str_to_hex(s)
+        """
+        Describe the input bytesequence s based on the loaded contract abi definition
 
+        :param s: bytes input
+        :return: AbiMethod instance
+        """
+        signatures = self.signatures.items()
 
         for sighash, method in signatures:
             if sighash is None or sighash.startswith(b"__"):
                 continue  # skip constructor
-
 
             if s.startswith(sighash):
                 s = s[len(sighash):]
@@ -587,38 +609,48 @@ class ContractAbiEthAbi(object):
                     values = decode_abi(types, s)
 
                 # (type, name, data)
-                method.inputs = [{"type":t,"name":n,"data":v} for t,n,v in list(zip(types,names,values))]
+                method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
+                    zip(types, names, values))]
                 return method
         else:
-            m = AbiMethodEthAbi({"type": "fallback", "name": "__fallback__", "inputs": [], "outputs": []})
-            types_def = self.signatures.get(b"__fallback__",{"inputs":[]})["inputs"]
+            method = AbiMethodEthAbi({"type": "fallback",
+                                "name": "__fallback__",
+                                "inputs": [], "outputs": []})
+            types_def = self.signatures.get(b"__fallback__", {"inputs": []})["inputs"]
             types = [t["type"] for t in types_def]
             names = [t["name"] for t in types_def]
 
             values = decode_abi(types, s)
 
             # (type, name, data)
-            method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(zip(types, names, values))]
+            method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
+                zip(types, names, values))]
             return method
 
 
-class AbiMethodEthAbi(DictLikeInterface):
-
-    def __init__(self, abi):
-        self.data = abi
+class AbiMethodEthAbi(dict):
+    """
+    Abstraction for an abi method that easily serializes to a human readable format.
+    The object itself is an extended dictionary for easy access.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.inputs = []
 
-    def __repr__(self):
+    def __str__(self):
         return self.describe()
 
-#    def __str__(self):
-#        return self.__repr__()
-
     def describe(self):
-        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self.get("outputs") else ""
-        inputs = ", ".join(["(%s) %s = %r"%(i["type"],i["name"],i["data"]) for i in self.inputs]) if self.inputs else ""
-        return "%s %s %s returns %s" % (self["type"], self.get("name"), "(%s)"%inputs if inputs else "()", "(%s)" %outputs if outputs else "()")
+        """
 
+        :return: string representation of the methods input decoded with the set abi
+        """
+        outputs = ", ".join(["(%s) %s" % (o["type"], o["name"]) for o in
+                             self["outputs"]]) if self.get("outputs") else ""
+        inputs = ", ".join(["(%s) %s = %r" % (i["type"], i["name"], i["data"]) for i in
+                            self.inputs]) if self.inputs else ""
+        return "%s %s %s returns %s" % (self["type"], self.get("name"), "(%s)" % inputs
+            if inputs else "()", "(%s)" % outputs if outputs else "()")
 
 
 class ContractAbi(object):
@@ -827,6 +859,7 @@ Examples:
 
     etherchain
     etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e")
+    etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e").describe_contract(nr_of_transactions_to_include=10)
     etherchain.account("ab7c74abc0c4d48d1bdad5dcb26153fc8780f83e").transactions()
     etherchain.transaction("d8df011e6112e2855717a46a16975a3b467bbb69f6db0a26ad6e0803f376dae9")
 
@@ -865,7 +898,7 @@ Examples:
 
 def main():
     logging.basicConfig(format='[%(filename)s - %(funcName)20s() ][%(levelname)8s] %(message)s',
-                        level=logging.DEBUG)
+                        level=logging.INFO)
     logger.setLevel(logging.DEBUG)
     interact()
 

@@ -28,18 +28,17 @@ import sys
 import requests
 import re
 import time
-import xml.etree.ElementTree as ET
 import datetime
 import json
 try:
      # Python 2.6-2.7
     from HTMLParser import HTMLParser
+    html = HTMLParser()
 except ImportError:
     # Python 3
-    from html.parser import HTMLParser
-from eth_abi import (
-    decode_abi
-)
+    import html
+
+from ethereum_input_decoder import ContractAbi
 
 import logging
 
@@ -53,34 +52,42 @@ class UserAgent(object):
 
     UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.186 Safari/537.36"
 
-    def __init__(self, baseurl, retry=0, retrydelay=6000):
-        self.baseurl, self.retry, self.retrydelay = baseurl, retry, retrydelay
+    def __init__(self, baseurl, retry=1, retrydelay=6000, proxies={}):
+        self.baseurl, self.retry, self.retrydelay, self.proxies = baseurl, retry, retrydelay, proxies
+        self.session = None
         self.initialize()
 
     def initialize(self):
         self.session = requests.session()
         self.session.headers.update({"user-agent":self.UA})
 
-    def get(self, path, params={}, headers={}):
+    def get(self, path, params={}, headers={}, proxies={}):
         new_headers = self.session.headers.copy()
         new_headers.update(headers)
+
+        proxies = proxies or self.proxies
+        _e = None
 
         for _ in range(self.retry):
             try:
                 resp = self.session.get("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
-                                         params=params, headers=new_headers)
+                                         params=params, headers=new_headers, proxies=proxies)
                 if resp.status_code != 200:
                     raise Exception("Unexpected Status Code: %s!=200" % resp.status_code)
                 return resp
             except Exception as e:
                 logger.exception(e)
+                _e = e
             logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
-        raise e
+        raise _e
 
     def post(self, path, params={}, headers={}):
         new_headers = self.session.headers.copy()
         new_headers.update(headers)
+
+        _e = None
+
         for _ in range(self.retry):
             try:
                 resp = self.session.post("%s%s%s"%(self.baseurl, "/" if not path.startswith("/") else "", path),
@@ -90,9 +97,10 @@ class UserAgent(object):
                 return resp
             except Exception as e:
                 logger.exception(e)
+                _e = e
             logger.warning("Retrying in %d seconds..." % self.retrydelay)
             time.sleep(self.retrydelay)
-        raise e
+        raise _e
 
 
 class EtherChainApi(object):
@@ -100,8 +108,8 @@ class EtherChainApi(object):
     Base EtherChain Api implementation
     """
 
-    def __init__(self):
-        self.session = UserAgent(baseurl="https://www.etherchain.org", retry=5, retrydelay=8)
+    def __init__(self, baseurl="http://www.etherchain.org", retry=5, retrydelay=8, proxies={}):
+        self.session = UserAgent(baseurl=baseurl, retry=retry, retrydelay=retrydelay, proxies=proxies)
 
     def get_transaction(self, tx):
         return self.session.get("/api/tx/%s" % tx).json()
@@ -113,7 +121,6 @@ class EtherChainApi(object):
         return self.session.get("/api/account/%s" % address).json()
 
     def get_account_history(self, account):
-        # https://www.etherchain.org/account/6090a6e47849629b7245dfa1ca21d94cd15878ef/history
         return self.session.get("/account/%s/history" % account).json()
 
     def _extract_text_from_html(self, s):
@@ -132,22 +139,16 @@ class EtherChainApi(object):
         # cleanup HTML from response
         for item in resp['data']:
             keys = item.keys()
-            for san_k in set(keys).intersection(set(("account", "blocknumber", "type", "direction"))):
+            for san_k in set(keys).intersection({"account", "blocknumber", "type", "direction"}):
                 item[san_k] = self._extract_text_from_html(item[san_k])
             for san_k in set(keys).intersection(("parenthash", "from", "to", "address")):
                 item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
         return resp
 
     def get_account_transactions(self, account, start=0, length=10):
-        # https://www.etherchain.org/account/44919b8026f38d70437a8eb3be47b06ab1c3e4bf/txs?draw=2&start=0&length=9999999&_=1522784788314
-        params = {
-            'start': start,
-            'length': length,
-        }
         return self._get_pageable_data("/account/%s/txs" % account, start=start, length=length)
 
     def get_transactions_pending(self, start=0, length=10):
-        #/txs/pending/data?draw=2&columns[0][data]=parenthash&columns[0][name]=&columns[0][searchable]=true&columns[0][orderable]=false&columns[0][search][value]=&columns[0][search][regex]=false&columns[1][data]=time&columns[1][name]=&columns[1][searchable]=true&columns[1][orderable]=false&columns[1][search][value]=&columns[1][search][regex]=false&columns[2][data]=from&columns[2][name]=&columns[2][searchable]=true&columns[2][orderable]=false&columns[2][search][value]=&columns[2][search][regex]=false&columns[3][data]=to&columns[3][name]=&columns[3][searchable]=true&columns[3][orderable]=false&columns[3][search][value]=&columns[3][search][regex]=false&columns[4][data]=value&columns[4][name]=&columns[4][searchable]=true&columns[4][orderable]=false&columns[4][search][value]=&columns[4][search][regex]=false&columns[5][data]=gas&columns[5][name]=&columns[5][searchable]=true&columns[5][orderable]=false&columns[5][search][value]=&columns[5][search][regex]=false&columns[6][data]=gasprice&columns[6][name]=&columns[6][searchable]=true&columns[6][orderable]=false&columns[6][search][value]=&columns[6][search][regex]=false&start=10&length=10&search[value]=&search[regex]=false&_=1522950769145
         return self._get_pageable_data("/txs/pending/data", start=start, length=length)
 
     def get_transactions(self, start=0, length=10):
@@ -286,7 +287,7 @@ class EtherChainApi(object):
     # Code
 
     def _extract_account_info_from_code_tag(self, tagid, s):
-        return HTMLParser().unescape(''.join(
+        return html.unescape(''.join(
             re.findall(r'<code id=\"%s\">(.+?)</code>' % tagid, s, re.DOTALL | re.MULTILINE)))
 
     def get_account_abi(self, account):
@@ -304,37 +305,6 @@ class EtherChainApi(object):
 
     def get_account_constructor_args(self, account):
         return self._extract_account_info_from_code_tag("constructorArgs", self.session.get("/account/%s" % account).text)
-
-    # ----------------- OLD STUFF --------------
-    def iter_contract(self, ):
-        """
-        @deprecated
-
-        :return:
-        """
-        nr = 0
-        while True:
-            logger.debug("%s/contracts/%d" % (self.BASEURL, nr))
-
-            resp = self.session.get("%s/contracts/%d" % (self.BASEURL, nr))
-            #rex is faster than parsing xhtml and fighting with encodings
-            root =re.findall("(<table.*<\/table>)",resp.text,re.MULTILINE|re.DOTALL)
-
-
-            root = ET.fromstring(''.join(root))
-            trs = root.findall('tr')
-            if not len(trs):
-                raise StopIteration()
-            for tr in root.findall('tr'):
-                tds = tr.findall("td")
-
-                c = Contract(address=tr.attrib["id"].strip(),
-                             name=tds[0].findall("a")[0].text.strip(),
-                             balance=tds[1].text.strip().split(" ",1)[0],
-                             url="%s/account/%s"%(self.BASEURL, tr.attrib["id"].strip()))
-                yield c
-
-            nr += 50
 
 
 class DictLikeInterface(object):
@@ -415,7 +385,7 @@ class EtherChainAccount(DictLikeInterface):
         s = self.api.session.get("/account/%s" % self.address).text
 
         try:
-            self.abi = ContractAbiEthAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
+            self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
         except ValueError:
             logger.debug("could not retrieve contract abi; maybe its just not a contract")
         try:
@@ -439,13 +409,13 @@ class EtherChainAccount(DictLikeInterface):
         self.abi = ContractAbi(json_abi)
 
     def describe_constructor(self):
-        return self.abi.describe_constructor(ContractAbiEthAbi.str_to_bytes(self.constructor_args))
+        return self.abi.describe_constructor(ContractAbi.str_to_bytes(self.constructor_args))
 
     def describe_transactions(self, length=10000):
         reslt = []
         for tx in self.transactions(direction="in", length=length)["data"]:
             tx_obj = EtherChainTransaction(tx["parenthash"], api=self.api)[0]
-            reslt.append((tx_obj["hash"], self.abi.describe_input(ContractAbiEthAbi.str_to_bytes(tx_obj["input"]))))
+            reslt.append((tx_obj["hash"], self.abi.describe_input(ContractAbi.str_to_bytes(tx_obj["input"]))))
         return reslt
 
     def describe_contract(self, nr_of_transactions_to_include=0):
@@ -485,8 +455,8 @@ class EtherChain(object):
     Interface to EtherChain Browsing featuers
     """
 
-    def __init__(self, api=None):
-        self.api = api or EtherChainApi()
+    def __init__(self, api=None, proxies={}):
+        self.api = api or EtherChainApi(proxies=proxies)
 
         self.charts = EtherChainCharts(api=self.api)
 
@@ -515,257 +485,6 @@ class EtherChain(object):
         return EtherChainTransaction(tx, api=self.api)
 
 
-class ContractAbiEthAbi(object):
-    """
-    Utility Class to encapsulate a contracts ABI
-    """
-    def __init__(self, jsonabi):
-        self.abi = jsonabi
-        self.signatures = {}
-        self._prepare_abi(jsonabi)
-
-    @staticmethod
-    def str_to_bytes(s):
-        """
-        Convert 0xHexString to bytes
-        :param s: 0x hexstring
-        :return:  byte sequence
-        """
-        return bytes.fromhex(s.replace("0x", ""))
-
-    def _prepare_abi(self, jsonabi):
-        """
-        Prepare the contract json abi for sighash lookups and fast access
-
-        :param jsonabi: contracts abi in json format
-        :return:
-        """
-        for element_description in jsonabi:
-            abi_e = AbiMethodEthAbi(element_description)
-            if abi_e["type"] == "constructor":
-                self.signatures[b"__constructor__"] = abi_e
-            elif abi_e["type"] == "fallback":
-                abi_e.setdefault("inputs", [])
-                self.signatures[b"__fallback__"] = abi_e
-            elif abi_e["type"] == "function":
-                self.signatures[ContractAbiEthAbi.str_to_bytes(abi_e["signature"])] = abi_e
-            elif abi_e["type"] == "event":
-                self.signatures[b"__event__"] = abi_e
-            else:
-                raise Exception("Invalid abi type: %s - %s - %s" % (abi_e.get("type"),
-                                                                    element_description, abi_e))
-
-    def describe_constructor(self, s):
-        """
-        Describe the input bytesequence (constructor arguments) s based on the loaded contract
-         abi definition
-
-        :param s: bytes constructor arguments
-        :return: AbiMethod instance
-        """
-        method = self.signatures.get(b"__constructor__")
-        if not method:
-            # constructor not available
-            m = AbiMethodEthAbi({"type": "constructor", "name": "", "inputs": [], "outputs": []})
-            return m
-
-        types_def = method["inputs"]
-        types = [t["type"] for t in types_def]
-        names = [t["name"] for t in types_def]
-
-        if not len(s):
-            values = len(types) * ["<nA>"]
-        else:
-            values = decode_abi(types, s)
-
-        # (type, name, data)
-        method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
-            zip(types, names, values))]
-        return method
-
-    def describe_input(self, s):
-        """
-        Describe the input bytesequence s based on the loaded contract abi definition
-
-        :param s: bytes input
-        :return: AbiMethod instance
-        """
-        signatures = self.signatures.items()
-
-        for sighash, method in signatures:
-            if sighash is None or sighash.startswith(b"__"):
-                continue  # skip constructor
-
-            if s.startswith(sighash):
-                s = s[len(sighash):]
-
-                types_def = self.signatures.get(sighash)["inputs"]
-                types = [t["type"] for t in types_def]
-                names = [t["name"] for t in types_def]
-
-                if not len(s):
-                    values = len(types) * ["<nA>"]
-                else:
-                    values = decode_abi(types, s)
-
-                # (type, name, data)
-                method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
-                    zip(types, names, values))]
-                return method
-        else:
-            method = AbiMethodEthAbi({"type": "fallback",
-                                "name": "__fallback__",
-                                "inputs": [], "outputs": []})
-            types_def = self.signatures.get(b"__fallback__", {"inputs": []})["inputs"]
-            types = [t["type"] for t in types_def]
-            names = [t["name"] for t in types_def]
-
-            values = decode_abi(types, s)
-
-            # (type, name, data)
-            method.inputs = [{"type": t, "name": n, "data": v} for t, n, v in list(
-                zip(types, names, values))]
-            return method
-
-
-class AbiMethodEthAbi(dict):
-    """
-    Abstraction for an abi method that easily serializes to a human readable format.
-    The object itself is an extended dictionary for easy access.
-    """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.inputs = []
-
-    def __str__(self):
-        return self.describe()
-
-    def describe(self):
-        """
-
-        :return: string representation of the methods input decoded with the set abi
-        """
-        outputs = ", ".join(["(%s) %s" % (o["type"], o["name"]) for o in
-                             self["outputs"]]) if self.get("outputs") else ""
-        inputs = ", ".join(["(%s) %s = %r" % (i["type"], i["name"], i["data"]) for i in
-                            self.inputs]) if self.inputs else ""
-        return "%s %s %s returns %s" % (self["type"], self.get("name"), "(%s)" % inputs
-            if inputs else "()", "(%s)" % outputs if outputs else "()")
-
-
-class ContractAbi(object):
-
-    def __init__(self, abi):
-        self.abi = abi
-        self.signatures = {}
-        self._prepare_abi(abi)
-
-    def _str_to_hex(self, s):
-        return bytes.fromhex(s.replace("0x",""))
-
-    def _prepare_abi(self, abi):
-        for element_description in abi:
-            abi_e = AbiMethod(element_description)
-            if abi_e["type"] == "constructor":
-                # TODO - handle constructor
-                self.signatures["__constructor__"] = abi_e
-            elif abi_e["type"] == "fallback":
-                self.signatures["__fallback__"] = abi_e
-            elif abi_e["type"] == "function":
-                self.signatures[self._str_to_hex(abi_e["signature"])] = abi_e
-            else:
-                raise abi_e
-
-    def describe_constructor(self, s):
-        result = []
-
-        method = self.signatures.get("__constructor__")
-        if not method:
-            # constructor not available
-            m = AbiMethod({"type": "constructor", "name": "", "inputs": [], "outputs": []})
-            m.consume(s)
-            result.append(m)
-            return result
-
-        method.consume(s)
-        result.append(method)
-
-        return result
-
-    def describe_input(self, s):
-        result = []
-        signatures = self.signatures.items()
-        s = self._str_to_hex(s)
-
-        while len(s):
-            found = False
-            for sighash, method in signatures:
-                if sighash is None:
-                    continue # skip constructor
-                if s.startswith(sighash):
-                    s = s[len(sighash):]
-                    size = method.consume(s)
-                    result.append(method)
-                    s = s[size:]
-                    found=True
-                    break
-            if not found:
-                m = AbiMethod({"type":"<unknown>","name":"","inputs":[],"outputs":[]})
-                m.consume(s)
-                result.append(m)
-                return result
-        return result
-
-
-class AbiMethod(DictLikeInterface):
-
-    SIZES = {"bytes8": lambda s:8,
-             "bytes16": lambda s: 16,
-             "bytes32": lambda s:32,
-             "uint256": lambda s:256 / 8,
-             "int256": lambda s:256 / 8,
-             "uint": lambda s:256 / 8,
-             "uint8": lambda s:8/8,
-             "int": lambda s:256 / 8,
-             "bytes": lambda s:100,
-             "address": lambda s:160/8,
-             "bytes32[]": lambda s: 32,
-             "string": lambda s: s.find("\0") if s.find("\0")<32 else 32,
-             "address[]": lambda s: 160/8}
-
-    def __init__(self, abi):
-        self.data = abi
-        self.inputs = []
-
-    def __repr__(self):
-        return self.describe()
-
-    def describe(self):
-        outputs = ", ".join(["(%s) %s"%(o["type"],o["name"]) for o in self["outputs"]]) if self.get("outputs") else ""
-        inputs = ", ".join(["(%s) %s %r"%(i["type"],i["name"],i["data"]) for i in self.inputs]) if self.inputs else ""
-        return "%s %s %s returns (%s)" % (self["type"], self.get("name"), "(%s)"%inputs if inputs else "<unknown>", "(%s)" %outputs if outputs else "<unknown>")
-
-    def consume(self, s):
-        self.inputs = []
-        idx = 0
-        if not len(s):
-            return idx
-        for d_input in self["inputs"]:
-            if AbiMethod.SIZES.get(d_input["type"])==None:
-                print (d_input["type"])
-            size = AbiMethod.SIZES.get(d_input["type"])(s[idx:])
-            self.inputs.append({"type":d_input["type"],
-                                "name":d_input["name"],
-                                "data":s[idx:idx+size]})
-            idx += size
-        else:
-            self.inputs.append({"type":"<unknown>",
-                                "name":"",
-                                "data":s[idx:]})
-            idx = len(s)
-        return idx
-
-
 class EtherChainCharts(object):
     """
     Interface to EtherChain Charts
@@ -779,52 +498,76 @@ class EtherChainCharts(object):
 
     def total_ether_supply(self):
         return self.api.get_stats_total_ether_supply()
+
     def market_cap(self):
         return self.api.get_stats_market_cap()
+
     def price_usd(self):
         return self.api.get_stats_price_usd()
+
     def price_btc(self):
         return self.api.get_stats_price_btc()
+
     def transactions_per_day(self):
         return self.api.get_stats_transactions_per_day()
+
     def block_gas_usage(self):
         return self.api.get_stats_block_gas_usage()
+
     def total_gas_usage(self):
         return self.api.get_stats_total_gas_usage()
+
     def average_block_utilization(self):
         return self.api.get_stats_average_block_utilization()
+
     def hashrate(self):
         return self.api.get_stats_hashrate()
+
     def mining_reward(self):
         return self.api.get_stats_mining_reward()
+
     def block_mining_reward(self):
         return self.api.get_stats_block_mining_reward()
+
     def uncle_mining_reward(self):
         return self.api.get_stats_uncle_mining_reward()
+
     def fee_mining_reward(self):
         return self.api.get_stats_fee_mining_reward()
+
     def distinct_miners(self):
         return self.api.get_stats_distinct_miners()
+
     def mining_revenue(self):
         return self.api.get_stats_mining_revenue()
+
     def top_miner_30d(self):
         return self.api.get_stats_top_miner_30d()
+
     def top_miner_24h(self):
         return self.api.get_stats_top_miner_24h()
+
     def blocks_per_day(self):
         return self.api.get_stats_blocks_per_day()
+
     def uncles_per_day(self):
         return self.api.get_stats_uncles_per_day()
+
     def block_time(self):
         return self.api.get_block_time()
+
     def difficulty(self):
         return self.api.get_stats_difficulty()
+
     def block_size(self):
         return self.api.get_stats_block_size()
+
     def block_gas_limit(self):
         return self.api.get_stats_block_gas_limit()
+
     def new_accounts(self):
         return self.api.get_stats_new_accounts()
+
     def total_accounts(self):
         return self.api.get_stats_total_accounts()
 

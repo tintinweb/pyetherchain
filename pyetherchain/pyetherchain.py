@@ -38,7 +38,7 @@ except ImportError:
     # Python 3
     import html
 
-from ethereum_input_decoder import ContractAbi
+from ethereum_input_decoder import ContractAbi, Utils
 
 import logging
 
@@ -108,7 +108,7 @@ class EtherChainApi(object):
     Base EtherChain Api implementation
     """
 
-    def __init__(self, baseurl="http://www.etherchain.org", retry=5, retrydelay=8, proxies={}):
+    def __init__(self, baseurl="https://www.etherchain.org", retry=5, retrydelay=8, proxies={}):
         self.session = UserAgent(baseurl=baseurl, retry=retry, retrydelay=retrydelay, proxies=proxies)
 
     def get_transaction(self, tx):
@@ -310,7 +310,8 @@ class EtherChainApi(object):
 class DictLikeInterface(object):
 
     def __getitem__(self, i):
-        return self.data[i]
+        e = self.data[i]  # enable lazy loading
+        return e if not callable(e) else e()
 
     def __len__(self):
         return len(self.data)
@@ -327,6 +328,11 @@ class DictLikeInterface(object):
         except KeyError:
             return default
 
+    def keys(self):
+        return self.data.keys()
+
+    def values(self):
+        return self.data.values()
 
 class EtherChainTransaction(DictLikeInterface):
     """
@@ -338,7 +344,22 @@ class EtherChainTransaction(DictLikeInterface):
 
         self.api = api or EtherChainApi()
 
+        self.data = None
+
+    def __str__(self):
         self.data = self._get()
+        return super().__str__()
+
+    def __repr__(self):
+        self.data = self._get()
+        return super().__repr__()
+
+    def __getitem__(self, item):
+        try:
+            return super().__getitem__(item)
+        except (KeyError, AttributeError, TypeError):
+            self.data = self._get()
+            return self.data[item]
 
     def _get(self):
         return self.api.get_transaction(self.tx)
@@ -357,11 +378,41 @@ class EtherChainAccount(DictLikeInterface):
 
     def __init__(self, address, api=None):
         self.address = address
-        self.abi, self.swarm_hash, self.source, self.code, self.constructor_args = None, None, None, None, None
+        #self.abi, self.swarm_hash, self.source, self.code, self.constructor_args = None, None, None, None, None
 
         self.api = api or EtherChainApi()
+
+        # prepare lazy loading
+        self.data = None
+        # lazy loading funcs
+
+    def __getattr__(self, item):
+        if item in ("abi", "swarm_hash", "source", "code", "constructor_args"):
+            self._get_extra_info()
+        return getattr(self, item)
+
+    def __str__(self):
         self.data = self._get()
-        self._get_extra_info()
+        return super().__str__()
+
+    def __repr__(self):
+        self.data = self._get()
+        return super().__repr__()
+
+    def __getitem__(self, item):
+        try:
+            return super().__getitem__(item)
+        except (AttributeError, KeyError, TypeError):
+            self.data = self._get()
+            return self.data[item]
+
+    def keys(self):
+        self.data = self.data or self._get()
+        return self.data.keys()
+
+    def values(self):
+        self.data = self.data or self._get()
+        return self.data.values()
 
     def _get(self):
         return self.api.get_account(self.address)
@@ -409,13 +460,13 @@ class EtherChainAccount(DictLikeInterface):
         self.abi = ContractAbi(json_abi)
 
     def describe_constructor(self):
-        return self.abi.describe_constructor(ContractAbi.str_to_bytes(self.constructor_args))
+        return self.abi.describe_constructor(Utils.str_to_bytes(self.constructor_args))
 
     def describe_transactions(self, length=10000):
         reslt = []
         for tx in self.transactions(direction="in", length=length)["data"]:
             tx_obj = EtherChainTransaction(tx["parenthash"], api=self.api)[0]
-            reslt.append((tx_obj["hash"], self.abi.describe_input(ContractAbi.str_to_bytes(tx_obj["input"]))))
+            reslt.append((tx_obj["hash"], self.abi.describe_input(Utils.str_to_bytes(tx_obj["input"]))))
         return reslt
 
     def describe_contract(self, nr_of_transactions_to_include=0):

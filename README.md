@@ -99,6 +99,8 @@ Commandline scripting mode (dangerous because cmdline params will be eval'd):
 # Random Examples
 
 ```python
+from pyetherchain.pyetherchain import EtherChain
+
 e = EtherChain()
 
 # getting an accoutn object

@@ -14,7 +14,7 @@ A python interface to the ethereum blockchain explorer at www.etherchain.org ❤
 ![interactive mode](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
 
 **CLI**  
-![interactive mode](https://user-images.githubusercontent.com/2865694/38444933-9a10b468-39f1-11e8-9a4a-3e7d9dc2c377.png)
+[![asciicast](https://asciinema.org/a/dKfFz1jjcS0g3n400yOYDdjQS.png)](https://asciinema.org/a/dKfFz1jjcS0g3n400yOYDdjQS)
 
 **FUN**   
 see [advertising campaign via transactions to popular contracts](https://github.com/tintinweb/pyetherchain/blob/master/doc/fun.md)
@@ -99,6 +99,8 @@ Commandline scripting mode (dangerous because cmdline params will be eval'd):
 # Random Examples
 
 ```python
+from pyetherchain.pyetherchain import EtherChain
+
 e = EtherChain()
 
 # getting an accoutn object

@@ -20,9 +20,11 @@ setup(
     url="https://github.com/tintinweb/pyetherchain/",
     download_url="https://github.com/tintinweb/pyetherchain/tarball/v0.3.2",
     #python setup.py register -r https://testpypi.python.org/pypi
-    long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
+    #long_description=read("README.rst") if os.path.isfile("README.rst") else read("README.md"),
     install_requires=["ethereum_input_decoder", "requests"],
     package_data={
                   'pyetherchain': ['pyetherchain'],
                   },
+    test_suite="nose.collector",
+    tests_require=["nose"],
 )

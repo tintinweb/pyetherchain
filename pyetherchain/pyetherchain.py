@@ -139,9 +139,9 @@ class EtherChainApi(object):
         # cleanup HTML from response
         for item in resp['data']:
             keys = item.keys()
-            for san_k in set(keys).intersection({"account", "blocknumber", "type", "direction"}):
+            for san_k in set(keys).intersection({"account", "blocknumber", "type", "direction", "number","miner"}):
                 item[san_k] = self._extract_text_from_html(item[san_k])
-            for san_k in set(keys).intersection(("parenthash", "from", "to", "address")):
+            for san_k in set(keys).intersection(("parenthash", "from", "to", "address","hash")):
                 item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
         return resp
 

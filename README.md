@@ -10,14 +10,14 @@ A python interface to the ethereum blockchain explorer at www.etherchain.org ❤
 
 🐍 Python 3.x
 
-**Dumped Contracts with abi decoded constructor/transactions**  
-![interactive mode](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
-
 **CLI**  
 [![asciicast](https://asciinema.org/a/dKfFz1jjcS0g3n400yOYDdjQS.png)](https://asciinema.org/a/dKfFz1jjcS0g3n400yOYDdjQS)
 
 **FUN**   
 see [advertising campaign via transactions to popular contracts](https://github.com/tintinweb/pyetherchain/blob/master/doc/fun.md)
+
+**Dumped Contracts with abi decoded constructor/transactions**  
+![interactive mode](https://user-images.githubusercontent.com/2865694/38581962-8f78dc86-3d0e-11e8-9241-6818cd5a1ea4.png)
 
 ### Interfaces
 

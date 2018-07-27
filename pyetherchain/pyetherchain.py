@@ -139,9 +139,9 @@ class EtherChainApi(object):
         # cleanup HTML from response
         for item in resp['data']:
             keys = item.keys()
-            for san_k in set(keys).intersection({"account", "blocknumber", "type", "direction"}):
+            for san_k in set(keys).intersection({"account", "blocknumber", "type", "direction", "number","miner"}):
                 item[san_k] = self._extract_text_from_html(item[san_k])
-            for san_k in set(keys).intersection(("parenthash", "from", "to", "address")):
+            for san_k in set(keys).intersection(("parenthash", "from", "to", "address","hash")):
                 item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
         return resp
 
@@ -290,6 +290,10 @@ class EtherChainApi(object):
         return html.unescape(''.join(
             re.findall(r'<code id=\"%s\">(.+?)</code>' % tagid, s, re.DOTALL | re.MULTILINE)))
 
+    def _extract_compiler_settings(self, s):
+        # <div class="row"><div class="col-3">Contract Name:</div><div class="col-9">Hourglass</div></div>
+        return {html.unescape(k).strip(":"):html.unescape(v) for k,v in re.findall(r'<div class="row"><div class="col-3">([^<]+)</div><div class="col-9">([^<]+)</div></div>',s, re.DOTALL | re.MULTILINE)}
+
     def get_account_abi(self, account):
         # <code id="abi">[
         return json.loads(self._extract_account_info_from_code_tag("abi", self.session.get("/account/%s" % account).text))
@@ -387,9 +391,9 @@ class EtherChainAccount(DictLikeInterface):
         # lazy loading funcs
 
     def __getattr__(self, item):
-        if item in ("abi", "swarm_hash", "source", "code", "constructor_args"):
-            self._get_extra_info()
-        return getattr(self, item)
+        if item in ("abi", "swarm_hash", "source", "code", "constructor_args", "compiler_settings"):
+            self._get_extra_info()  # creates attributes
+        return self.__getattribute__(item)
 
     def __str__(self):
         self.data = self._get()
@@ -438,23 +442,33 @@ class EtherChainAccount(DictLikeInterface):
         try:
             self.abi = ContractAbi(json.loads(self.api._extract_account_info_from_code_tag("abi", s)))
         except ValueError:
+            self.abi = None
             logger.debug("could not retrieve contract abi; maybe its just not a contract")
         try:
             self.swarm_hash = self.api._extract_account_info_from_code_tag("swarmHash", s)
         except ValueError:
+            self.swarm_hash = None
             logger.debug("could not retrieve swarm hash")
         try:
             self.source = self.api._extract_account_info_from_code_tag("source", s)
         except ValueError:
+            self.soruce = None
             logger.debug("could not retrieve contract source code")
         try:
             self.code = self.api._extract_account_info_from_code_tag("contractCode", s)
         except ValueError:
+            self.code = None
             logger.debug("could not retrieve contract bytecode")
         try:
             self.constructor_args = self.api._extract_account_info_from_code_tag("constructorArgs", s)
         except ValueError:
+            self.constructor_args = None
             logger.debug("could not retrieve contract constructor args")
+        try:
+            self.compiler_settings = self.api._extract_compiler_settings(s)
+        except ValueError:
+            self.compiler_settings = None
+            logger.debug("could not retrieve contract compiler settings")
 
     def set_abi(self, json_abi):
         self.abi = ContractAbi(json_abi)

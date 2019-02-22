@@ -29,7 +29,7 @@ class EtherScanIoApi(object):
         while not end or page <= end:
             resp = self.session.get("/contractsVerified/%d" % page).text
             page, lastpage = re.findall(
-                r'Page <b>(\d+)</b> of <b>(\d+)</b>', resp)[0]
+                r'Page <.*>(\d+)</.*> of <.*>(\d+)</.*>', resp)[0]
             page, lastpage = int(page), int(lastpage)
             if not end:
                 end = lastpage
@@ -58,9 +58,8 @@ class EtherScanIoApi(object):
             try:
                 print("=======================================================")
                 print(address)
-                # print(resp)
                 resp = resp.split(
-                    "</span><pre class='js-sourcecopyarea' id='editor' style='margin-top: 5px;'>", 1)[1]
+                    "</div><pre class='js-sourcecopyarea' id='editor' style='margin-top: 5px;'>", 1)[1]
                 resp = resp.split("</pre><br>", 1)[0]
                 return resp.replace("&lt;", "<").replace("&gt;", ">").replace("&le;", "<=").replace("&ge;", ">=").replace("&amp;", "&").replace("&vert;", "|")
             except Exception as e:
@@ -106,7 +105,7 @@ class EtherScanIoApi(object):
 if __name__ == "__main__":
     output_directory = "./output"
     overwrite = False
-    amount = 100000
+    amount = 1
 
     e = EtherScanIoApi()
     for nr, c in enumerate(e.get_contracts()):

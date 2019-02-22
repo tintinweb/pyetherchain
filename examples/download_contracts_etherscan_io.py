@@ -2,6 +2,7 @@
 # -*- coding: UTF-8 -*-
 # github.com/tintinweb
 #
+import os
 """
 
 HACKy - non productive - script to download contracts from etherscan.io with throtteling.
@@ -19,27 +20,29 @@ class EtherScanIoApi(object):
     """
 
     def __init__(self, proxies={}):
-        self.session = UserAgent(baseurl="https://etherscan.io", retry=5, retrydelay=8, proxies=proxies)
+        self.session = UserAgent(
+            baseurl="https://etherscan.io", retry=5, retrydelay=8, proxies=proxies)
 
     def get_contracts(self, start=0, end=None):
         page = start
 
         while not end or page <= end:
             resp = self.session.get("/contractsVerified/%d" % page).text
-            page, lastpage = re.findall(r'Page <b>(\d+)</b> of <b>(\d+)</b>', resp)[0]
-            page, lastpage = int(page),int(lastpage)
+            page, lastpage = re.findall(
+                r'Page <.*>(\d+)</.*> of <.*>(\d+)</.*>', resp)[0]
+            page, lastpage = int(page), int(lastpage)
             if not end:
                 end = lastpage
             rows = self._parse_tbodies(resp)[0]  # only use first tbody
             for col in rows:
-                contract = {'address': self._extract_text_from_html(col[0]).split(" ",1)[0],
-                               'name': self._extract_text_from_html(col[1]),
-                               'compiler': self._extract_text_from_html(col[2]),
-                               'balance': self._extract_text_from_html(col[3]),
-                               'txcount': int(self._extract_text_from_html(col[4])),
-                               'settings': self._extract_text_from_html(col[5]),
-                               'date': self._extract_text_from_html(col[6]),
-                               }
+                contract = {'address': self._extract_text_from_html(col[0]).split(" ", 1)[0],
+                            'name': self._extract_text_from_html(col[1]),
+                            'compiler': self._extract_text_from_html(col[2]),
+                            'balance': self._extract_text_from_html(col[3]),
+                            'txcount': int(self._extract_text_from_html(col[4])),
+                            'settings': self._extract_text_from_html(col[5]),
+                            'date': self._extract_text_from_html(col[6]),
+                            }
                 yield contract
             page += 1
 
@@ -47,7 +50,7 @@ class EtherScanIoApi(object):
         import time
         e = None
         for _ in range(20):
-            resp = self.session.get("/address/%s"%address).text
+            resp = self.session.get("/address/%s" % address).text
             if "You have reached your maximum request limit for this resource. Please try again later" in resp:
                 print("[[THROTTELING]]")
                 time.sleep(1+2.5*_)
@@ -55,10 +58,10 @@ class EtherScanIoApi(object):
             try:
                 print("=======================================================")
                 print(address)
-                #print(resp)
-                resp = resp.split("</span><pre class='js-sourcecopyarea' id='editor' style='margin-top: 5px;'>",1)[1]
-                resp = resp.split("</pre><br>",1)[0]
-                return resp.replace("&lt;", "<").replace("&gt;", ">").replace("&le;","<=").replace("&ge;",">=").replace("&amp;","&").replace("&vert;","|")
+                resp = resp.split(
+                    "</div><pre class='js-sourcecopyarea' id='editor' style='margin-top: 5px;'>", 1)[1]
+                resp = resp.split("</pre><br>", 1)[0]
+                return resp.replace("&lt;", "<").replace("&gt;", ">").replace("&le;", "<=").replace("&ge;", ">=").replace("&amp;", "&").replace("&vert;", "|")
             except Exception as e:
                 print(e)
                 time.sleep(1 + 2.5 * _)
@@ -84,7 +87,8 @@ class EtherScanIoApi(object):
             for san_k in set(keys).intersection(set(("account", "blocknumber", "type", "direction"))):
                 item[san_k] = self._extract_text_from_html(item[san_k])
             for san_k in set(keys).intersection(("parenthash", "from", "to", "address")):
-                item[san_k] = self._extract_hexstr_from_html_attrib(item[san_k])
+                item[san_k] = self._extract_hexstr_from_html_attrib(
+                    item[san_k])
         return resp
 
     def _parse_tbodies(self, data):
@@ -98,23 +102,22 @@ class EtherScanIoApi(object):
         return tbodies
 
 
-import os
-
-if __name__=="__main__":
+if __name__ == "__main__":
     output_directory = "./output"
     overwrite = False
-    amount = 100000
+    amount = 1
 
     e = EtherScanIoApi()
-    for nr,c in enumerate(e.get_contracts()):
-        with open("contracts.json",'a') as f:
-            f.write("%s\n"%c)
+    for nr, c in enumerate(e.get_contracts()):
+        with open("contracts.json", 'a') as f:
+            f.write("%s\n" % c)
             print("got contract: %s" % c)
-            dst = os.path.join(output_directory, c["address"].replace("0x", "")[:2].lower())  # index by 1st byte
+            dst = os.path.join(output_directory, c["address"].replace(
+                "0x", "")[:2].lower())  # index by 1st byte
             if not os.path.isdir(dst):
                 os.makedirs(dst)
             fpath = os.path.join(dst, "%s_%s.sol" % (
-            c["address"].replace("0x", ""), str(c['name']).replace("\\", "_").replace("/", "_")))
+                c["address"].replace("0x", ""), str(c['name']).replace("\\", "_").replace("/", "_")))
             if not overwrite and os.path.exists(fpath):
                 print(
                     "[%d/%d] skipping, already exists --> %s (%-20s) -> %s" % (nr, amount, c["address"], c["name"], fpath))
@@ -127,13 +130,14 @@ if __name__=="__main__":
             except Exception as e:
                 continue
 
-
             with open(fpath, "wb") as f:
                 f.write(bytes(source, "utf8"))
 
-            print("[%d/%d] dumped --> %s (%-20s) -> %s" % (nr, amount, c["address"], c["name"], fpath))
+            print("[%d/%d] dumped --> %s (%-20s) -> %s" %
+                  (nr, amount, c["address"], c["name"], fpath))
 
             nr += 1
             if nr >= amount:
-                print("[%d/%d] finished. maximum amount of contracts to download reached." % (nr, amount))
+                print(
+                    "[%d/%d] finished. maximum amount of contracts to download reached." % (nr, amount))
                 break
